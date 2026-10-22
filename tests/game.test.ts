@@ -6,7 +6,7 @@ import { reduce, type Action } from "../src/server/gameMachine";
 import { checkWin, resolveMafiaKill as resolveNight, tallyVotes } from "../src/server/resolve";
 import { assignRoles } from "../src/server/roles";
 import { sanitizeSettings } from "../src/server/gameMachine";
-import { toPlayerView } from "../src/server/view";
+import { toPlayerView, toPublicView } from "../src/server/view";
 
 const ctx = { now: 1_000, rng: () => 0 };
 
@@ -201,9 +201,10 @@ describe("view redaction", () => {
   it("dead players' roles are revealed only when the setting is on", () => {
     const r = nightRoom();
     r.players.find((p) => p.id === "d")!.alive = false;
-    expect(toPlayerView(r, "c1").players.find((p) => p.id === "d")!.role).toBe("DOCTOR");
-    r.settings.revealRoleOnDeath = false;
+    expect(r.settings.revealRoleOnDeath).toBe(false); // secret by default
     expect(toPlayerView(r, "c1").players.find((p) => p.id === "d")!.role).toBeUndefined();
+    r.settings.revealRoleOnDeath = true;
+    expect(toPlayerView(r, "c1").players.find((p) => p.id === "d")!.role).toBe("DOCTOR");
   });
 });
 
@@ -330,5 +331,37 @@ describe("Upright Citizen", () => {
     const r = run(withSpecial("UPRIGHT"), { type: "NIGHT_ACT", by: "m", target: "s" });
     expect(r.phase).toBe("DAY");
     expect(r.revenge).toBeNull();
+  });
+});
+
+describe("projector safety", () => {
+  it("the public screen view carries no secrets", () => {
+    const r = nightRoom();
+    r.night.mafiaVotes = { m: "c1" };
+    r.investigations = { x: [{ round: 1, targetId: "m", isMafia: true }] };
+    r.log = [{ round: 1, phase: "NIGHT", text: "secret", secret: true, at: 0 }];
+    const v = toPublicView(r);
+    expect(v.players.filter((p) => p.role)).toHaveLength(0);
+    expect(v.meId).toBe("");
+    expect(v.mafiaVotes).toBeUndefined();
+    expect(v.investigations).toBeUndefined();
+    expect(v.gm).toBeUndefined();
+    expect(v.log).toHaveLength(0);
+    expect(JSON.stringify(v)).not.toMatch(/MAFIA|DOCTOR|DETECTIVE|t-/);
+  });
+
+  it("only public role reveals reach the screen", () => {
+    const r = withSpecial("SHEIK", "DAY");
+    r.players.find((p) => p.id === "s")!.revealed = true;
+    expect(toPublicView(r).players.filter((p) => p.role).map((p) => p.id)).toEqual(["s"]);
+    expect(toPublicView({ ...r, phase: "GAME_OVER" }).players.filter((p) => p.role)).toHaveLength(6);
+  });
+
+  it("the night ready-count is hidden from everyone but the GM", () => {
+    const r = run(nightRoom(), { type: "NIGHT_ACT", by: "m", target: "c1" });
+    expect(toPlayerView(r, "c1").progress).toEqual({ done: 0, required: 0 });
+    expect(toPublicView(r).progress).toEqual({ done: 0, required: 0 });
+    r.players.push(player("gm", { isGM: true }));
+    expect(toPlayerView(r, "gm").progress).toEqual({ done: 1, required: 3 });
   });
 });

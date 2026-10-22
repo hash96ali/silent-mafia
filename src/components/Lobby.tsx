@@ -7,6 +7,7 @@ import { call } from "@/client/socket";
 import { LIMITS } from "@/shared/constants";
 import { validateSetup } from "@/shared/rules";
 import type { PlayerView, Role, Settings } from "@/shared/types";
+import { ScreenIcon } from "./icons";
 import { TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
 import { ROLE_LABEL, ROLE_LABEL_AR } from "@/shared/roleText";
@@ -98,6 +99,16 @@ function ShareCode({ code }: { code: string }) {
           {copied ? "تم النسخ" : "مشاركة الرابط"}
         </Button>
       </div>
+      <a
+        href={`/screen/${code}`}
+        target="_blank"
+        rel="noopener"
+        className="mt-2 flex w-full items-center justify-center gap-2 rounded-full border border-blood-soft/40 bg-blood/10 py-3 font-semibold text-white"
+      >
+        <ScreenIcon className="size-5" />
+        فتح شاشة العرض (للبروجكتر)
+      </a>
+      <p className="mt-1 text-xs text-neutral-500">اعرضها على الشاشة الكبيرة بدل شاشة المضيف؛ لا تظهر فيها أي أدوار سرية.</p>
     </Panel>
   );
 }

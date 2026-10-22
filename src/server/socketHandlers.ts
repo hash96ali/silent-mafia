@@ -5,7 +5,7 @@ import type { Ack, ClientToServerEvents, Player, Room, ServerToClientEvents, Soc
 import { migrateHost, reduce, type Action } from "./gameMachine";
 import { allRooms, cleanName, createRoom, deleteRoom, findSession, getRoom, joinRoom, saveRoom } from "./roomStore";
 import { cancel, cancelRoom, scheduleAt } from "./timers";
-import { toPlayerView } from "./view";
+import { toPlayerView, toPublicView } from "./view";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
@@ -18,13 +18,17 @@ function safe<T>(ack: unknown): Ack<T> {
 }
 
 export function registerSocketHandlers(io: IO): void {
-  // Every client gets its own redacted view; nothing is broadcast to the room as a whole.
+  // Every player gets their own redacted view. Projector screens share the
+  // public view, which carries no secrets at all.
   function broadcast(room: Room): void {
     const now = Date.now();
     for (const p of room.players) {
       if (p.socketId) io.to(p.socketId).emit("room:state", toPlayerView(room, p.id, now));
     }
+    io.to(screenChannel(room.code)).emit("room:state", toPublicView(room, now));
   }
+
+  const screenChannel = (code: string) => `screen:${code}`;
 
   function syncPhaseTimer(room: Room): void {
     const key = `phase:${room.code}`;
@@ -178,6 +182,16 @@ export function registerSocketHandlers(io: IO): void {
       // The detective learns the answer immediately and privately.
       const investigation = res.room.investigations[playerId]?.at(-1);
       reply({ ok: true, data: investigation?.targetId === p.targetId ? { investigation } : {} });
+    });
+
+    // A projector / TV screen: watches a room without taking a seat.
+    socket.on("screen:watch", (p, ack) => {
+      const reply = safe(ack);
+      const room = typeof p?.code === "string" ? getRoom(p.code) : undefined;
+      if (!room) return reply({ ok: false, error: "الغرفة غير موجودة." });
+      socket.join(screenChannel(room.code));
+      reply({ ok: true, data: undefined });
+      socket.emit("room:state", toPublicView(room));
     });
 
     socket.on("disconnect", () => {

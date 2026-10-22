@@ -8,6 +8,7 @@ import { LeaveButton } from "./Lobby";
 import { TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
 import { RoleCard } from "./RoleCard";
+import { SecretPanel } from "./SecretPanel";
 import { ROLE_LABEL_AR } from "@/shared/roleText";
 import { Button, ErrorText, Panel, arDigits } from "./ui";
 
@@ -48,12 +49,13 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
     return res.ok;
   };
 
-  // Silent cue: buzz the phone when it's this player's turn to act.
-  const myTurn = me.alive && ((night && hasNightAction(view, me)) || view.phase === "VOTING");
+  // Silent cue. Every living player buzzes at once, so a buzz in a quiet
+  // room never singles out who has a night role.
   const myRevenge = view.phase === "REVENGE" && view.revengeBy === me.id;
+  const buzz = (me.alive && !me.isGM && (night || view.phase === "VOTING")) || myRevenge;
   useEffect(() => {
-    if (myTurn || myRevenge) navigator.vibrate?.([40, 80, 40]);
-  }, [view.phase, view.round, myTurn, myRevenge]);
+    if (buzz) navigator.vibrate?.([40, 80, 40]);
+  }, [view.phase, view.round, buzz]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -87,12 +89,12 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
         <PlayerList view={view} />
       </Panel>
 
-      {view.log.length > 0 && (view.phase === "GAME_OVER" || me.isGM) && (
+      {view.log.length > 0 && view.phase === "GAME_OVER" && (
         <Panel title="أحداث اللعبة" eyebrow="Story">
           <ol className="flex flex-col gap-1.5 text-sm">
             {view.log.map((e, i) => (
               <li key={i} dir="auto" className={e.secret ? "text-neutral-500" : "text-neutral-200"}>
-                <span className="text-ember/70">ج{arDigits(e.round)} · </span>
+                <span className="text-ember/70">ج{arDigits(e.round)}: </span>
                 {e.text}
               </li>
             ))}
@@ -115,11 +117,6 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
 
 function winnerText(view: PlayerView) {
   return view.winner === "MAFIA" ? "انتصرت المافيا وسيطرت على المدينة" : "انتصرت المدينة وتم القضاء على المافيا";
-}
-
-function hasNightAction(view: PlayerView, me: PublicPlayer): boolean {
-  if (me.role === "SNIPER") return !!view.sniperShotAvailable;
-  return me.role === "MAFIA" || me.role === "DOCTOR" || me.role === "DETECTIVE";
 }
 
 function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run: Run }) {
@@ -145,7 +142,14 @@ function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
     );
   }
 
-  if (me.isGM) return <GmPanel view={view} nameOf={nameOf} />;
+  const secretKey = `${view.phase}-${view.round}`;
+  if (me.isGM) {
+    return (
+      <SecretPanel resetKey={secretKey}>
+        <GmPanel view={view} nameOf={nameOf} />
+      </SecretPanel>
+    );
+  }
 
   if (view.phase === "REVENGE" && view.revengeBy !== me.id) {
     return <Panel>{nameOf(view.revengeBy)}، المواطن الصالح، يختار من سيسحبه معه…</Panel>;
@@ -171,6 +175,7 @@ function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
 
   if (view.phase === "VOTING") {
     return (
+      <SecretPanel resetKey={secretKey}>
       <Panel title="صوّت لإخراج لاعب:" eyebrow="Cast your vote" subtitle={me.voteWeight > 1 ? `صوتك يُحسب ×${arDigits(me.voteWeight)}` : "تصويتك سري."}>
         <TargetPicker
           key={`vote-${view.round}`}
@@ -181,10 +186,20 @@ function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
           onConfirm={(id) => run("vote:cast", { targetId: id })}
         />
       </Panel>
+      </SecretPanel>
     );
   }
 
-  // NIGHT
+  // NIGHT: every living player gets the same cover, actions or not.
+  return (
+    <SecretPanel resetKey={secretKey}>
+      <NightBody view={view} me={me} run={run} nameOf={nameOf} />
+    </SecretPanel>
+  );
+}
+
+function NightBody({ view, me, run, nameOf }: { view: PlayerView; me: PublicPlayer; run: Run; nameOf: (id: string | null | undefined) => string }) {
+  const alive = view.players.filter((p) => p.alive && !p.isGM);
   const pick = (id: string) => run("night:act", { targetId: id });
   switch (me.role) {
     case "MAFIA": {
@@ -351,21 +366,46 @@ function GmPanel({ view, nameOf }: { view: PlayerView; nameOf: (id: string | nul
       : view.phase === "VOTING"
         ? Object.entries(gm.votes).map(([v, t]) => [nameOf(v), t === SKIP ? "امتناع" : nameOf(t)])
         : [];
+  const players = view.players.filter((p) => !p.isGM);
   return (
-    <Panel title="لوحة الراوي" eyebrow="Game Master · live">
-      {rows.length ? (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-          {rows.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt className="text-neutral-500">{k}</dt>
-              <dd>{v}</dd>
-            </div>
+    <>
+      <Panel title="لوحة الراوي" eyebrow="Game Master · live" subtitle={view.progress.required ? `جاهز ${arDigits(view.progress.done)} من ${arDigits(view.progress.required)}` : undefined}>
+        {rows.length ? (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+            {rows.map(([k, v]) => (
+              <div key={k} className="contents">
+                <dt className="text-neutral-500">{k}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          <p className="text-sm text-neutral-400">اروِ أحداث {PHASE_TITLE[view.phase]}.</p>
+        )}
+      </Panel>
+      <Panel title="الأدوار السرية" eyebrow="All roles">
+        <ul className="grid grid-cols-2 gap-1.5 text-sm">
+          {players.map((p) => (
+            <li key={p.id} className={`flex justify-between gap-2 rounded-lg bg-black/40 px-2.5 py-1.5 ${p.alive ? "" : "opacity-45 line-through"}`}>
+              <span className="truncate">{p.name}</span>
+              <span className={p.role === "MAFIA" ? "text-ember" : "text-neutral-400"}>{p.role ? ROLE_LABEL_AR[p.role] : "—"}</span>
+            </li>
           ))}
-        </dl>
-      ) : (
-        <p className="text-sm text-neutral-400">اروِ أحداث {PHASE_TITLE[view.phase]}.</p>
+        </ul>
+      </Panel>
+      {view.log.length > 0 && (
+        <Panel title="السجل الكامل" eyebrow="Full log">
+          <ol className="flex max-h-64 flex-col gap-1.5 overflow-y-auto text-sm">
+            {view.log.map((e, i) => (
+              <li key={i} className={e.secret ? "text-neutral-500" : "text-neutral-200"}>
+                <span className="text-ember/70">ج{arDigits(e.round)}: </span>
+                {e.text}
+              </li>
+            ))}
+          </ol>
+        </Panel>
       )}
-    </Panel>
+    </>
   );
 }
 

@@ -14,9 +14,9 @@ export function PlayerList({
   onToggleGM?: (id: string, on: boolean) => void;
 }) {
   const dragged = new Set(view.announcements.filter((a) => a.kind === "REVENGE").flatMap((a) => a.killedIds));
-  // Your own role and your Mafia teammates' stay behind the hold-to-reveal card;
-  // here we only badge roles that are public, so a glance at the list leaks nothing.
-  const showRoles = !!view.gm || view.phase === "GAME_OVER";
+  // Your own role, your Mafia teammates' and (for the GM) everyone's stay behind
+  // a cover; here we only badge roles that are public, so a glance leaks nothing.
+  const showRoles = view.phase === "GAME_OVER";
   return (
     <ul className="flex flex-col gap-2">
       {view.players.map((p, i) => (

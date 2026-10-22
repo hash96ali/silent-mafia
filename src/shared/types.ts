@@ -186,6 +186,8 @@ export interface ClientToServerEvents {
   "night:act": (p: { targetId: string }, ack: Ack<{ investigation?: Investigation }>) => void;
   "vote:cast": (p: { targetId: VoteTarget }, ack: Ack) => void;
   "revenge:pick": (p: { targetId: string }, ack: Ack) => void;
+  /** Projector screen: receive the public view of a room without joining it. */
+  "screen:watch": (p: { code: string }, ack: Ack) => void;
 }
 
 export interface ServerToClientEvents {

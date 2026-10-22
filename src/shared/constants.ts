@@ -10,7 +10,7 @@ export const DEFAULT_SETTINGS: Settings = {
   nightSec: 60,
   daySec: 180,
   voteSec: 60,
-  revealRoleOnDeath: true,
+  revealRoleOnDeath: false,
 };
 
 export const LIMITS = {
