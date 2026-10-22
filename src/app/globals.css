@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* Noir neon theme: near-black glass panels lit by red neon. */
+@theme {
+  --color-ink: #070709;
+  --color-panel: #121216;
+  --color-line: #2a2a31;
+  --color-blood: #e0141e;
+  --color-blood-soft: #ff3b45;
+  --color-ember: #ff6b6b;
+  --font-sans: var(--font-cairo), system-ui, sans-serif;
+  --font-display: var(--font-cairo), system-ui, sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  color: #ecebf2;
+  background:
+    radial-gradient(120% 60% at 50% 115%, rgb(140 10 18 / 0.45), transparent 60%),
+    radial-gradient(80% 40% at 50% -10%, rgb(90 10 14 / 0.25), transparent 70%),
+    var(--color-ink);
+  background-attachment: fixed;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+@layer components {
+  /* Frosted panel with a faint red rim. */
+  .glass {
+    background: linear-gradient(180deg, rgb(28 28 34 / 0.85), rgb(14 14 18 / 0.85));
+    border: 1px solid rgb(255 255 255 / 0.08);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 0 0 1px rgb(224 20 30 / 0.12),
+      0 10px 30px -10px rgb(0 0 0 / 0.8);
+    backdrop-filter: blur(10px);
+  }
+
+  /* Neon outline used for selected rows, pills and the active card. */
+  .neon {
+    border-color: var(--color-blood-soft);
+    box-shadow:
+      0 0 0 1px rgb(255 59 69 / 0.6),
+      0 0 14px rgb(255 30 40 / 0.55),
+      inset 0 0 14px rgb(255 30 40 / 0.18);
+  }
+
+  .neon-text {
+    color: var(--color-blood-soft);
+    text-shadow:
+      0 0 6px rgb(255 40 50 / 0.8),
+      0 0 22px rgb(255 20 30 / 0.55);
+  }
+
+  .neon-button {
+    background: linear-gradient(180deg, #ff2a35, #b30d16);
+    border: 1px solid #ff6b72;
+    box-shadow:
+      0 0 0 1px rgb(255 80 90 / 0.4),
+      0 0 22px rgb(255 25 35 / 0.7),
+      0 0 50px rgb(255 25 35 / 0.35),
+      inset 0 1px 0 rgb(255 255 255 / 0.35);
+  }
+  .neon-button:active {
+    filter: brightness(1.15);
+  }
+  .neon-button:disabled {
+    background: #2a2a31;
+    border-color: #3a3a42;
+    box-shadow: none;
+    color: #77767f;
+  }
+
+  /* Thin glowing divider under the top bar. */
+  .neon-rule {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-blood-soft), transparent);
+    box-shadow: 0 0 10px rgb(255 30 40 / 0.8);
+  }
+}
+
+/* Long-press on a role card shouldn't open the text selection / callout menu. */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}

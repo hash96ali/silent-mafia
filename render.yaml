@@ -1,0 +1,13 @@
+# Render Blueprint: one always-on Node web service (Next.js + Socket.io).
+# Game state is in memory, so keep this at a single instance.
+services:
+  - type: web
+    name: silent-mafia
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
