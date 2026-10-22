@@ -1,5 +1,5 @@
-import { LIMITS, REVENGE_SEC } from "../shared/constants";
-import { SKIP, type Phase, type Player, type Room, type Settings, type VoteTarget } from "../shared/types";
+import { GHOST_TURN_MIN_MS, GHOST_TURN_SPREAD_MS, LIMITS, REVENGE_SEC } from "../shared/constants";
+import { NIGHT_TURNS, SKIP, type NightTurn, type Phase, type Player, type Room, type Settings, type VoteTarget } from "../shared/types";
 import { checkWin, resolveMafiaKill, resolveSniperShot, tallyVotes, voteWeight } from "./resolve";
 import { ROLE_LABEL_AR } from "../shared/roleText";
 import { validateSetup } from "../shared/rules";
@@ -16,9 +16,11 @@ export type Action =
   | { type: "START"; by: string }
   | { type: "REVEAL_ACK"; by: string }
   | { type: "NIGHT_ACT"; by: string; target: string }
+  | { type: "NIGHT_SELECT"; by: string; target: string | null }
   | { type: "VOTE"; by: string; target: VoteTarget }
   | { type: "REVENGE_PICK"; by: string; target: string }
   | { type: "ADVANCE"; by: string }
+  /** `deadline` is the wake time the timer was set for, so stale timers are ignored. */
   | { type: "TIMEOUT"; deadline: number }
   | { type: "PLAY_AGAIN"; by: string };
 
@@ -38,6 +40,7 @@ export function reduce(prev: Room, action: Action, ctx: Ctx): Result {
   const room = structuredClone(prev);
   try {
     apply(room, action, ctx);
+    if (room.phase !== "LOBBY") ensureGodfather(room, ctx);
   } catch (e) {
     if (e instanceof GameError) return { ok: false, error: e.message };
     throw e;
@@ -95,11 +98,13 @@ function apply(room: Room, a: Action, ctx: Ctx): void {
       room.round = 1;
       room.investigations = {};
       room.sniperShotUsed = false;
+      room.godfatherId = null;
       room.revenge = null;
       room.announcements = [];
       room.log = [];
       room.winner = null;
       for (const p of playing) log(room, ctx, `${p.name}: ${ROLE_LABEL_AR[p.role!]}.`, true);
+      ensureGodfather(room, ctx);
       enterPhase(room, "ROLE_REVEAL", ctx);
       return;
     }
@@ -116,8 +121,16 @@ function apply(room: Room, a: Action, ctx: Ctx): void {
     case "NIGHT_ACT":
       requirePhase(room, "NIGHT");
       nightAct(room, a.by, a.target, ctx);
-      if (nightComplete(room)) finishNight(room, ctx);
+      nextTurn(room, ctx);
       return;
+
+    case "NIGHT_SELECT": {
+      requirePhase(room, "NIGHT");
+      requireTurnActor(room, a.by, "MAFIA");
+      if (a.target !== null) requireMafiaTarget(room, a.target);
+      room.night.mafiaSelection = a.target;
+      return;
+    }
 
     case "VOTE": {
       requirePhase(room, "VOTING");
@@ -148,7 +161,7 @@ function apply(room: Room, a: Action, ctx: Ctx): void {
       return;
 
     case "TIMEOUT":
-      if (room.deadline === null || room.deadline !== a.deadline) fail("مؤقت منتهي.");
+      if (a.deadline !== wakeAt(room)) fail("مؤقت منتهي.");
       advance(room, ctx);
       return;
 
@@ -172,7 +185,12 @@ function advance(room: Room, ctx: Ctx): void {
     case "ROLE_REVEAL":
       return enterPhase(room, "NIGHT", ctx);
     case "NIGHT":
-      return finishNight(room, ctx);
+      // Ends only the current turn; on timeout the Godfather's highlighted pick still counts.
+      if (room.night.turn === "MAFIA" && !room.night.ghostEndsAt && room.night.mafiaSelection) {
+        room.night.mafiaTarget = room.night.mafiaSelection;
+        log(room, ctx, `انتهى وقت المافيا؛ اعتُمد اختيار كبير المافيا: ${getPlayer(room, room.night.mafiaTarget).name}.`, true);
+      }
+      return nextTurn(room, ctx);
     case "DAY":
       return enterPhase(room, "VOTING", ctx);
     case "VOTING":
@@ -187,20 +205,87 @@ function advance(room: Room, ctx: Ctx): void {
 
 // ---------- Night ----------
 
-function nightAct(room: Room, by: string, targetId: string, ctx: Ctx): void {
+/** Night turns that exist in this game, in order (fixed by the lobby settings). */
+export function nightTurns(s: Settings): NightTurn[] {
+  return NIGHT_TURNS.filter(
+    (t) => t === "MAFIA" || (t === "DOCTOR" && s.doctor) || (t === "DETECTIVE" && s.detective && !s.sniper) || (t === "SNIPER" && s.sniper),
+  );
+}
+
+/** Who acts on `turn`: the Godfather for the Mafia; null if nobody can (dead, or the Sniper's bullet is spent). */
+export function turnActor(room: Room, turn: NightTurn): Player | null {
+  if (turn === "MAFIA") return alivePlayers(room).find((p) => p.id === room.godfatherId) ?? null;
+  if (turn === "SNIPER" && room.sniperShotUsed) return null;
+  return alivePlayers(room).find((p) => p.role === turn) ?? null;
+}
+
+/** When the current phase or night turn should end by itself (the visible deadline, or a ghost turn's earlier end). */
+export function wakeAt(room: Room): number | null {
+  if (room.phase === "NIGHT" && room.night.ghostEndsAt) return room.night.ghostEndsAt;
+  return room.deadline;
+}
+
+function startNight(room: Room, ctx: Ctx): void {
+  ensureGodfather(room, ctx);
+  room.night = {
+    turn: null,
+    queue: nightTurns(room.settings),
+    ghostEndsAt: null,
+    mafiaSelection: null,
+    mafiaTarget: null,
+    doctorTarget: null,
+    detectiveTarget: null,
+    sniperTarget: null,
+  };
+  nextTurn(room, ctx);
+}
+
+/** Moves to the next night turn, or resolves the night when none are left. */
+function nextTurn(room: Room, ctx: Ctx): void {
+  const turn = room.night.queue.shift();
+  room.night.turn = turn ?? null;
+  room.night.ghostEndsAt = null;
+  if (!turn) return finishNight(room, ctx);
+
+  // Every turn shows the same countdown. A role that can't act ends its turn
+  // early at a random moment, just like a player who decides quickly.
+  const sec = room.settings.nightSec;
+  room.deadline = sec > 0 ? ctx.now + sec * 1000 : null;
+  if (!turnActor(room, turn)) {
+    const end = ctx.now + GHOST_TURN_MIN_MS + Math.round(ctx.rng() * GHOST_TURN_SPREAD_MS);
+    room.night.ghostEndsAt = room.deadline ? Math.min(end, room.deadline) : end;
+  }
+}
+
+function requireTurnActor(room: Room, by: string, turn?: NightTurn): Player {
   const actor = requireAlive(room, by);
+  const current = room.night.turn;
+  if (!current || (turn && current !== turn) || turnActor(room, current)?.id !== actor.id) {
+    if (actor.role === "MAFIA" && current === "MAFIA") fail("وحده كبير المافيا يقرر الضحية.");
+    fail("ليس دورك الآن.");
+  }
+  return actor;
+}
+
+function requireMafiaTarget(room: Room, targetId: string): Player {
+  const target = requireAlive(room, targetId);
+  if (target.role === "MAFIA") fail("لا يمكنك استهداف فرد من المافيا.");
+  return target;
+}
+
+function nightAct(room: Room, by: string, targetId: string, ctx: Ctx): void {
+  const actor = requireTurnActor(room, by);
   if (targetId === SKIP) {
     if (actor.role !== "SNIPER") fail("وحده القناص يمكنه إمساك النار.");
-    requireSniperShot(room);
     room.night.sniperTarget = SKIP;
     return;
   }
   const target = requireAlive(room, targetId);
 
-  switch (actor.role) {
+  switch (room.night.turn) {
     case "MAFIA":
-      if (target.role === "MAFIA") fail("لا يمكنك استهداف فرد من المافيا.");
-      room.night.mafiaVotes[actor.id] = target.id;
+      requireMafiaTarget(room, target.id);
+      room.night.mafiaSelection = room.night.mafiaTarget = target.id;
       return;
     case "DOCTOR":
       room.night.doctorTarget = target.id;
@@ -217,7 +302,6 @@ function nightAct(room: Room, by: string, targetId: string, ctx: Ctx): void {
       log(room, ctx, `حقق الشرطي مع ${target.name} (${target.role === "MAFIA" ? "مافيا" : "بريء"}).`, true);
       return;
     case "SNIPER":
-      requireSniperShot(room);
       if (target.id === actor.id) fail("لا يمكنك إطلاق النار على نفسك.");
       room.night.sniperTarget = target.id;
       return;
@@ -226,34 +310,26 @@ function nightAct(room: Room, by: string, targetId: string, ctx: Ctx): void {
   }
 }
 
-function requireSniperShot(room: Room): void {
-  if (room.sniperShotUsed) fail("لقد استخدمت رصاصتك الوحيدة.");
-  if (room.night.sniperTarget !== null) fail("لقد اتخذت قرارك هذه الليلة.");
-}
-
-export function nightActors(room: Room) {
-  const alive = alivePlayers(room);
-  return {
-    mafia: alive.filter((p) => p.role === "MAFIA"),
-    doctor: alive.find((p) => p.role === "DOCTOR") ?? null,
-    detective: alive.find((p) => p.role === "DETECTIVE") ?? null,
-    /** Only while the shot is unused; they must shoot or hold fire each night. */
-    sniper: room.sniperShotUsed ? null : (alive.find((p) => p.role === "SNIPER") ?? null),
-  };
-}
-
-function nightComplete(room: Room): boolean {
-  const { mafia, doctor, detective, sniper } = nightActors(room);
-  return (
-    mafia.every((m) => m.id in room.night.mafiaVotes) &&
-    (!doctor || room.night.doctorTarget !== null) &&
-    (!detective || room.night.detectiveTarget !== null) &&
-    (!sniper || room.night.sniperTarget !== null)
-  );
+/**
+ * Keeps exactly one living Godfather while any Mafia member lives. When the
+ * Godfather dies (night, vote, Sniper, drag-down) a random surviving Mafia
+ * member takes over, along with the kill decision.
+ */
+function ensureGodfather(room: Room, ctx: Ctx): void {
+  const current = room.players.find((p) => p.id === room.godfatherId);
+  if (current?.alive && current.role === "MAFIA") return;
+  const mafia = alivePlayers(room).filter((p) => p.role === "MAFIA");
+  if (mafia.length === 0) {
+    room.godfatherId = null;
+    return;
+  }
+  const next = mafia[Math.floor(ctx.rng() * mafia.length)];
+  log(room, ctx, current ? `انتقلت زعامة المافيا إلى ${next.name}.` : `${next.name} هو كبير المافيا.`, true);
+  room.godfatherId = next.id;
 }
 
 function finishNight(room: Room, ctx: Ctx): void {
-  const { targetId, killedId } = resolveMafiaKill(room.night, ctx.rng);
+  const { targetId, killedId } = resolveMafiaKill(room.night);
   const name = (id: string | null) => (id ? getPlayer(room, id).name : "لا أحد");
   log(room, ctx, `استهدفت المافيا ${name(targetId)}، وحمى الطبيب ${name(room.night.doctorTarget)}.`, true);
   const killed = new Set(killedId ? [killedId] : []);
@@ -333,11 +409,11 @@ function endIfWon(room: Room, ctx: Ctx): boolean {
 
 function enterPhase(room: Room, phase: Phase, ctx: Ctx): void {
   room.phase = phase;
-  const sec = { NIGHT: room.settings.nightSec, DAY: room.settings.daySec, VOTING: room.settings.voteSec, REVENGE: REVENGE_SEC }[phase as string] ?? 0;
+  const sec = { DAY: room.settings.daySec, VOTING: room.settings.voteSec, REVENGE: REVENGE_SEC }[phase as string] ?? 0;
   room.deadline = sec > 0 ? ctx.now + sec * 1000 : null;
   if (phase === "ROLE_REVEAL") room.revealAcks = [];
-  if (phase === "NIGHT") room.night = { mafiaVotes: {}, doctorTarget: null, detectiveTarget: null, sniperTarget: null };
   if (phase === "VOTING") room.votes = {};
+  if (phase === "NIGHT") startNight(room, ctx);
 }
 
 /** Counts how many required players have acted in the current phase, for progress UI. */
@@ -346,13 +422,9 @@ export function phaseProgress(room: Room): { done: number; required: number } {
     case "ROLE_REVEAL":
       return { done: room.revealAcks.length, required: playingPlayers(room).length };
     case "NIGHT": {
-      const { mafia, doctor, detective, sniper } = nightActors(room);
-      const done =
-        mafia.filter((m) => m.id in room.night.mafiaVotes).length +
-        Number(!!doctor && room.night.doctorTarget !== null) +
-        Number(!!detective && room.night.detectiveTarget !== null) +
-        Number(!!sniper && room.night.sniperTarget !== null);
-      return { done, required: mafia.length + Number(!!doctor) + Number(!!detective) + Number(!!sniper) };
+      // Turns finished out of tonight's turns (the GM is the only one who sees this).
+      const required = nightTurns(room.settings).length;
+      return { done: required - room.night.queue.length - (room.night.turn ? 1 : 0), required };
     }
     case "REVENGE":
       return { done: 0, required: 1 };

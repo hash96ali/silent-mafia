@@ -36,11 +36,13 @@ export function toPlayerView(room: Room, viewerId: string | null, now = Date.now
   }));
 
   const isMafia = viewer?.role === "MAFIA";
+  const seesGodfather = isMafia || !!viewer?.isGM || room.phase === "GAME_OVER";
+  const night = room.phase === "NIGHT";
   const myNightTarget =
-    room.phase !== "NIGHT" || !viewer
+    !night || !viewer
       ? null
       : isMafia
-        ? (room.night.mafiaVotes[viewer.id] ?? null)
+        ? room.night.mafiaTarget
         : viewer.role === "DOCTOR"
           ? room.night.doctorTarget
           : viewer.role === "DETECTIVE"
@@ -67,7 +69,9 @@ export function toPlayerView(room: Room, viewerId: string | null, now = Date.now
     myNightTarget,
     myVote: viewer && room.phase === "VOTING" ? (room.votes[viewer.id] ?? null) : null,
     hasAckedReveal: !!viewer && room.revealAcks.includes(viewer.id),
-    ...(isMafia && room.phase === "NIGHT" ? { mafiaVotes: room.night.mafiaVotes } : {}),
+    nightTurn: night ? room.night.turn : null,
+    ...(seesGodfather && room.godfatherId ? { godfatherId: room.godfatherId } : {}),
+    ...(isMafia && night && room.night.turn === "MAFIA" ? { mafiaSelection: room.night.mafiaSelection } : {}),
     ...(viewer?.role === "DETECTIVE" ? { investigations: room.investigations[viewer.id] ?? [] } : {}),
     ...(viewer?.role === "SNIPER" ? { sniperShotAvailable: !room.sniperShotUsed } : {}),
     revengeBy: room.revenge?.uprightId ?? null,

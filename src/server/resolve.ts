@@ -1,5 +1,4 @@
 import { SKIP, type NightState, type Player, type Team, type VoteTarget } from "../shared/types";
-import type { Rng } from "./roles";
 
 function countVotes(votes: Record<string, string>, weightOf: (voterId: string) => number = () => 1): Map<string, number> {
   const counts = new Map<string, number>();
@@ -7,19 +6,10 @@ function countVotes(votes: Record<string, string>, weightOf: (voterId: string) =
   return counts;
 }
 
-/**
- * Picks the Mafia's victim by majority. A tie between top picks is broken at
- * random so a split Mafia still kills someone. Then the doctor's save applies.
- */
-export function resolveMafiaKill(night: NightState, rng: Rng): { targetId: string | null; killedId: string | null } {
-  const counts = countVotes(night.mafiaVotes);
-  if (counts.size === 0) return { targetId: null, killedId: null };
-
-  const max = Math.max(...counts.values());
-  const top = [...counts].filter(([, n]) => n === max).map(([id]) => id);
-  const targetId = top[Math.floor(rng() * top.length)];
-  const killedId = targetId === night.doctorTarget ? null : targetId;
-  return { targetId, killedId };
+/** The Godfather's target dies unless the Doctor protected them. */
+export function resolveMafiaKill(night: NightState): { targetId: string | null; killedId: string | null } {
+  const targetId = night.mafiaTarget;
+  return { targetId, killedId: targetId && targetId !== night.doctorTarget ? targetId : null };
 }
 
 /**

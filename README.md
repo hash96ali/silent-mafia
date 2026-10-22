@@ -25,6 +25,13 @@ Host toggles each role in the lobby. Mafia, Citizen and (optionally) Doctor / De
 
 `render.yaml` deploys to [Render](https://render.com) as a single Node web service: push the repo to GitHub, then in Render choose **New → Blueprint** and pick the repo. Any host that runs a long-lived Node process with WebSockets works the same way (`npm ci --include=dev && npm run build`, then `npm start`). Serverless hosts such as Vercel won't work, because the game server must stay running.
 
+## Night order
+
+The night runs one role at a time: **Mafia → Doctor → Detective → Sniper** (only roles the host enabled). Each turn has its own timer (the "night" timer in the lobby is per turn). Everyone's phone buzzes at every turn change, and the projector shows whose turn it is.
+
+- **Godfather (كبير المافيا):** one Mafia member, chosen at random when roles are dealt, makes the kill. The other Mafia see his highlighted pick live but can't choose. If the Godfather dies (vote, Sniper, drag-down), a random living Mafia member takes over immediately. If his turn times out, his highlighted pick still counts.
+- **Dead or spent roles still get a turn.** It shows the same countdown and ends by itself after a random 6–14s, so nobody can tell that role is gone.
+
 ## Architecture
 
 One Node process (`server.ts`) serves Next.js and Socket.io. The game state lives in server memory and is authoritative.

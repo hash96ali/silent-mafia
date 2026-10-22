@@ -9,7 +9,7 @@ import { TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
 import { RoleCard } from "./RoleCard";
 import { SecretPanel } from "./SecretPanel";
-import { ROLE_LABEL_AR } from "@/shared/roleText";
+import { NIGHT_TURN_LABEL, ROLE_LABEL_AR } from "@/shared/roleText";
 import { Button, ErrorText, Panel, arDigits } from "./ui";
 
 const PHASE_TITLE: Record<Phase, string> = {
@@ -55,7 +55,7 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
   const buzz = (me.alive && !me.isGM && (night || view.phase === "VOTING")) || myRevenge;
   useEffect(() => {
     if (buzz) navigator.vibrate?.([40, 80, 40]);
-  }, [view.phase, view.round, buzz]);
+  }, [view.phase, view.round, view.nightTurn, buzz]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -71,7 +71,14 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
       </header>
 
       {me.role && view.phase !== "GAME_OVER" && (
-        <RoleCard role={me.role} large={view.phase === "ROLE_REVEAL"} teammates={view.players.filter((p) => p.role === "MAFIA" && p.id !== me.id).map((p) => p.name)} />
+        <RoleCard
+          role={me.role}
+          godfather={view.godfatherId === me.id}
+          large={view.phase === "ROLE_REVEAL"}
+          teammates={view.players
+            .filter((p) => p.role === "MAFIA" && p.id !== me.id && p.alive)
+            .map((p) => (p.id === view.godfatherId ? `${p.name} (الكبير)` : p.name))}
+        />
       )}
 
       {view.phase !== "ROLE_REVEAL" && recent.map((a, i) => <AnnouncementBanner key={i} a={a} view={view} />)}
@@ -142,7 +149,8 @@ function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
     );
   }
 
-  const secretKey = `${view.phase}-${view.round}`;
+  // Each phase and each night turn starts covered again.
+  const secretKey = `${view.phase}-${view.round}-${view.nightTurn ?? ""}`;
   if (me.isGM) {
     return (
       <SecretPanel resetKey={secretKey}>
@@ -198,29 +206,74 @@ function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
   );
 }
 
+/**
+ * Night runs one role at a time (Mafia → Doctor → Detective → Sniper). A
+ * player only gets controls on their own turn; everyone else sees whose turn
+ * it is, the same "wait silently" screen a citizen sees.
+ */
 function NightBody({ view, me, run, nameOf }: { view: PlayerView; me: PublicPlayer; run: Run; nameOf: (id: string | null | undefined) => string }) {
   const alive = view.players.filter((p) => p.alive && !p.isGM);
   const pick = (id: string) => run("night:act", { targetId: id });
+  const turn = view.nightTurn;
+  const wait = (extra?: ReactNode) => (
+    <>
+      {extra}
+      <Sleeping text={turn ? `الآن ${NIGHT_TURN_LABEL[turn]}… انتظر بصمت` : "المدينة نائمة…"} />
+    </>
+  );
+
   switch (me.role) {
     case "MAFIA": {
-      const votesFor = (id: string) =>
-        Object.entries(view.mafiaVotes ?? {})
-          .filter(([m, t]) => t === id && m !== me.id)
-          .map(([m]) => nameOf(m));
+      if (turn !== "MAFIA") {
+        return wait(
+          <Panel>
+            <p className="text-sm text-neutral-300">
+              ضحية الليلة: <span className="font-bold text-ember">{view.myNightTarget ? nameOf(view.myNightTarget) : "لم تُحدَّد"}</span>
+            </p>
+          </Panel>,
+        );
+      }
+      const victims = alive.filter((p) => p.role !== "MAFIA");
+      if (view.godfatherId === me.id) {
+        return (
+          <Panel title="أنت كبير المافيا: اختر الضحية" eyebrow="Godfather" subtitle="القرار لك وحدك. يرى أفراد المافيا اختيارك مباشرة.">
+            <TargetPicker
+              key={`m-${view.round}`}
+              candidates={victims}
+              current={view.mafiaSelection ?? null}
+              confirmLabel={() => "تأكيد الخيار في الخفاء"}
+              onConfirm={pick}
+              onSelect={(id) => void call("night:select", { targetId: id })}
+            />
+          </Panel>
+        );
+      }
       return (
-        <Panel title="اختر الضحية لاغتيالها:" eyebrow="Select a victim" subtitle="صوّت لشخص واحد لاغتياله هذه الليلة.">
-          <TargetPicker
-            key={`m-${view.round}`}
-            candidates={alive.filter((p) => p.role !== "MAFIA")}
-            current={view.myNightTarget}
-            confirmLabel={() => "تأكيد الخيار في الخفاء"}
-            onConfirm={pick}
-            note={(id) => (votesFor(id).length ? `اختاره: ${votesFor(id).join("، ")}` : "")}
-          />
+        <Panel title={`كبير المافيا ${nameOf(view.godfatherId)} يختار الضحية`} eyebrow="Watching" subtitle="تابع اختياره مباشرة؛ القرار له وحده.">
+          <ul className="flex flex-col gap-2.5">
+            {victims.map((p, i) => {
+              const lit = p.id === view.mafiaSelection;
+              return (
+                <li key={p.id} className={`flex items-center gap-3 rounded-xl border px-3 py-3 ${lit ? "neon bg-blood/10" : "border-white/[0.07] bg-black/40"}`}>
+                  <span className="flex-1 font-semibold">
+                    <span className="text-neutral-400">{arDigits(i + 1)}. </span>
+                    {p.name}
+                  </span>
+                  {lit && (
+                    <span className="flex items-center gap-1 text-sm font-bold text-ember">
+                      اختيار الكبير
+                      <CrosshairIcon className="size-4" />
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </Panel>
       );
     }
     case "DOCTOR":
+      if (turn !== "DOCTOR") return wait();
       return (
         <Panel title="اختر من تحميه:" eyebrow="Protect" subtitle="شخص واحد تنقذه من المافيا هذه الليلة.">
           <TargetPicker key={`d-${view.round}`} candidates={alive} current={view.myNightTarget} confirmLabel={() => "تأكيد الحماية في الخفاء"} onConfirm={pick} />
@@ -228,6 +281,7 @@ function NightBody({ view, me, run, nameOf }: { view: PlayerView; me: PublicPlay
       );
     case "DETECTIVE": {
       const tonight = view.investigations?.find((i) => i.round === view.round);
+      if (turn !== "DETECTIVE") return wait(tonight && <Verdict name={nameOf(tonight.targetId)} isMafia={tonight.isMafia} />);
       return (
         <Panel title="اختر من تحقق معه:" eyebrow="Investigate" subtitle="ستعرف النتيجة فوراً وبسرية.">
           {tonight ? (
@@ -249,8 +303,14 @@ function NightBody({ view, me, run, nameOf }: { view: PlayerView; me: PublicPlay
     }
     case "SNIPER":
       if (!view.sniperShotAvailable) return <Sleeping text="أطلقت رصاصتك الوحيدة. المدينة نائمة…" />;
-      if (view.myNightTarget) {
-        return <Sleeping text={view.myNightTarget === SKIP ? "أمسكت نارك هذه الليلة." : `رصاصتك نحو ${nameOf(view.myNightTarget)} تصيب مع الفجر.`} />;
+      if (turn !== "SNIPER") {
+        return wait(
+          view.myNightTarget && view.myNightTarget !== SKIP ? (
+            <Panel>
+              <p className="text-sm text-neutral-300">رصاصتك نحو {nameOf(view.myNightTarget)} تصيب مع الفجر.</p>
+            </Panel>
+          ) : undefined,
+        );
       }
       return (
         <Panel title="اختر هدفك:" eyebrow="One bullet" subtitle="إن أصبت مافيا تنجو، وإن أصبت بريئاً تموتان معاً.">
@@ -265,7 +325,7 @@ function NightBody({ view, me, run, nameOf }: { view: PlayerView; me: PublicPlay
         </Panel>
       );
     default:
-      return <Sleeping text="المدينة نائمة…" />;
+      return wait();
   }
 }
 
@@ -280,6 +340,7 @@ function TargetPicker({
   onConfirm,
   allowSkip,
   note,
+  onSelect,
 }: {
   candidates: PublicPlayer[];
   current: string | null;
@@ -287,8 +348,14 @@ function TargetPicker({
   onConfirm: (id: string) => Promise<boolean>;
   allowSkip?: string;
   note?: (id: string) => string;
+  /** Called as the highlighted row changes, before confirming. */
+  onSelect?: (id: string | null) => void;
 }) {
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelectedState] = useState<string | null>(null);
+  const setSelected = (id: string | null) => {
+    setSelectedState(id);
+    onSelect?.(id);
+  };
   const [busy, setBusy] = useState(false);
   const options = [...candidates.map((p) => ({ id: p.id, label: p.name })), ...(allowSkip ? [{ id: SKIP as string, label: allowSkip }] : [])];
 
@@ -358,7 +425,9 @@ function GmPanel({ view, nameOf }: { view: PlayerView; nameOf: (id: string | nul
   const rows: [string, ReactNode][] =
     view.phase === "NIGHT"
       ? [
-          [ROLE_LABEL_AR.MAFIA, Object.entries(gm.night.mafiaVotes).map(([m, t]) => `${nameOf(m)} ← ${nameOf(t)}`).join("، ") || "—"],
+          ["الدور الحالي", gm.night.turn ? `${NIGHT_TURN_LABEL[gm.night.turn]}${gm.night.ghostEndsAt ? " (شكلي: صاحب الدور لا يستطيع اللعب)" : ""}` : "—"],
+          ["كبير المافيا", nameOf(view.godfatherId)],
+          [ROLE_LABEL_AR.MAFIA, gm.night.mafiaTarget ? `${nameOf(gm.night.mafiaTarget)} ✓` : gm.night.mafiaSelection ? `${nameOf(gm.night.mafiaSelection)} (يفكر)` : "—"],
           [ROLE_LABEL_AR.DOCTOR, nameOf(gm.night.doctorTarget)],
           [ROLE_LABEL_AR.DETECTIVE, nameOf(gm.night.detectiveTarget)],
           [ROLE_LABEL_AR.SNIPER, gm.night.sniperTarget === SKIP ? "أمسك النار" : nameOf(gm.night.sniperTarget)],
@@ -369,7 +438,11 @@ function GmPanel({ view, nameOf }: { view: PlayerView; nameOf: (id: string | nul
   const players = view.players.filter((p) => !p.isGM);
   return (
     <>
-      <Panel title="لوحة الراوي" eyebrow="Game Master · live" subtitle={view.progress.required ? `جاهز ${arDigits(view.progress.done)} من ${arDigits(view.progress.required)}` : undefined}>
+      <Panel
+        title="لوحة الراوي"
+        eyebrow="Game Master · live"
+        subtitle={view.progress.required ? `${view.phase === "NIGHT" ? "أدوار منتهية" : "جاهز"} ${arDigits(view.progress.done)} من ${arDigits(view.progress.required)}` : undefined}
+      >
         {rows.length ? (
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
             {rows.map(([k, v]) => (

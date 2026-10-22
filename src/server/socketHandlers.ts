@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 import type { Server, Socket } from "socket.io";
 import { HOST_GRACE_MS, ROOM_IDLE_TTL_MS } from "../shared/constants";
 import type { Ack, ClientToServerEvents, Player, Room, ServerToClientEvents, SocketData } from "../shared/types";
-import { migrateHost, reduce, type Action } from "./gameMachine";
+import { migrateHost, reduce, wakeAt, type Action } from "./gameMachine";
 import { allRooms, cleanName, createRoom, deleteRoom, findSession, getRoom, joinRoom, saveRoom } from "./roomStore";
 import { cancel, cancelRoom, scheduleAt } from "./timers";
 import { toPlayerView, toPublicView } from "./view";
@@ -32,9 +32,9 @@ export function registerSocketHandlers(io: IO): void {
 
   function syncPhaseTimer(room: Room): void {
     const key = `phase:${room.code}`;
-    if (room.deadline === null) return cancel(key);
-    const deadline = room.deadline;
-    scheduleAt(key, deadline, () => dispatch(room.code, { type: "TIMEOUT", deadline }));
+    const at = wakeAt(room);
+    if (at === null) return cancel(key);
+    scheduleAt(key, at, () => dispatch(room.code, { type: "TIMEOUT", deadline: at }));
   }
 
   function dispatch(code: string, action: Action): { ok: true; room: Room } | { ok: false; error: string } {
@@ -170,6 +170,9 @@ export function registerSocketHandlers(io: IO): void {
     socket.on("game:advance", (ack) => act(socket, ack, (by) => ({ type: "ADVANCE", by })));
     socket.on("game:playAgain", (ack) => act(socket, ack, (by) => ({ type: "PLAY_AGAIN", by })));
     socket.on("reveal:ack", (ack) => act(socket, ack, (by) => ({ type: "REVEAL_ACK", by })));
+    socket.on("night:select", (p, ack) =>
+      act(socket, ack, (by) => ({ type: "NIGHT_SELECT", by, target: typeof p?.targetId === "string" ? p.targetId : null })),
+    );
     socket.on("vote:cast", (p, ack) => act(socket, ack, (by) => ({ type: "VOTE", by, target: String(p?.targetId) })));
     socket.on("revenge:pick", (p, ack) => act(socket, ack, (by) => ({ type: "REVENGE_PICK", by, target: String(p?.targetId) })));
 

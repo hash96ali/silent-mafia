@@ -1,4 +1,4 @@
-import type { Role } from "./types";
+import type { NightTurn, Role } from "./types";
 
 export const ROLE_LABEL: Record<Role, string> = {
   MAFIA: "Mafia",
@@ -28,6 +28,13 @@ export const ROLE_BLURB: Record<Role, string> = {
   SHEIK: "إذا صوّتت المدينة لإخراجك، تكشف كارتك وتنجو مرة واحدة، ويصبح صوتك بثلاثة أصوات.",
   SNIPER: "معك رصاصة واحدة طوال اللعبة. إن أصبت مافيا تنجو، وإن أصبت بريئاً تموتان معاً.",
   UPRIGHT: "إذا صوّتت المدينة لإخراجك، تسحب معك لاعباً واحداً تختاره.",
+};
+
+export const NIGHT_TURN_LABEL: Record<NightTurn, string> = {
+  MAFIA: "دور المافيا",
+  DOCTOR: "دور الطبيب",
+  DETECTIVE: "دور الشرطي",
+  SNIPER: "دور القناص",
 };
 
 /** "المافيا (Mafia)" — Arabic name with the English one in brackets. */

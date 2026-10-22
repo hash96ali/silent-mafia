@@ -2,32 +2,48 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../src/shared/constants";
 import { validateSetup } from "../src/shared/rules";
 import type { Player, Role, Room } from "../src/shared/types";
-import { reduce, type Action } from "../src/server/gameMachine";
-import { checkWin, resolveMafiaKill as resolveNight, tallyVotes } from "../src/server/resolve";
+import { reduce, sanitizeSettings, wakeAt, type Action } from "../src/server/gameMachine";
+import { checkWin, resolveMafiaKill, tallyVotes } from "../src/server/resolve";
 import { assignRoles } from "../src/server/roles";
-import { sanitizeSettings } from "../src/server/gameMachine";
 import { toPlayerView, toPublicView } from "../src/server/view";
 
 const ctx = { now: 1_000, rng: () => 0 };
+const TURN_MS = DEFAULT_SETTINGS.nightSec * 1000;
 
 function player(id: string, extra: Partial<Player> = {}): Player {
   return { id, name: id, token: `t-${id}`, socketId: null, connected: true, disconnectedAt: null, isGM: false, role: null, alive: true, revealed: false, ...extra };
 }
 
+const emptyNight = (): Room["night"] => ({
+  turn: null,
+  queue: [],
+  ghostEndsAt: null,
+  mafiaSelection: null,
+  mafiaTarget: null,
+  doctorTarget: null,
+  detectiveTarget: null,
+  sniperTarget: null,
+});
+
 function room(players: Player[], extra: Partial<Room> = {}): Room {
+  const has = (r: Role) => players.some((p) => p.role === r);
   return {
     code: "ABCD",
     phase: "LOBBY",
     round: 0,
-    settings: { ...DEFAULT_SETTINGS },
+    // Settings follow the roles in play, so the night only has turns for them.
+    settings: players.some((p) => p.role)
+      ? { ...DEFAULT_SETTINGS, doctor: has("DOCTOR"), detective: has("DETECTIVE"), sniper: has("SNIPER"), sheik: has("SHEIK"), upright: has("UPRIGHT") }
+      : { ...DEFAULT_SETTINGS },
     players,
     hostId: players[0].id,
     deadline: null,
-    night: { mafiaVotes: {}, doctorTarget: null, detectiveTarget: null, sniperTarget: null },
+    night: emptyNight(),
     votes: {},
     revealAcks: [],
     investigations: {},
     sniperShotUsed: false,
+    godfatherId: null,
     revenge: null,
     announcements: [],
     log: [],
@@ -38,12 +54,6 @@ function room(players: Player[], extra: Partial<Room> = {}): Room {
   };
 }
 
-/** A room already in NIGHT with fixed roles: m=Mafia, d=Doctor, x=Detective, c1/c2=Citizens. */
-function nightRoom(): Room {
-  const roles: [string, Role][] = [["m", "MAFIA"], ["d", "DOCTOR"], ["x", "DETECTIVE"], ["c1", "CITIZEN"], ["c2", "CITIZEN"]];
-  return room(roles.map(([id, role]) => player(id, { role })), { phase: "NIGHT", round: 1 });
-}
-
 function run(r: Room, ...actions: Action[]): Room {
   for (const a of actions) {
     const res = reduce(r, a, ctx);
@@ -52,6 +62,28 @@ function run(r: Room, ...actions: Action[]): Room {
   }
   return r;
 }
+
+/** Starts the night the way a real game does: the last role-reveal ack. */
+function atNight(r: Room): Room {
+  const playing = r.players.filter((p) => !p.isGM);
+  return run({ ...r, phase: "ROLE_REVEAL", round: r.round || 1, revealAcks: playing.slice(0, -1).map((p) => p.id) }, { type: "REVEAL_ACK", by: playing.at(-1)!.id });
+}
+
+/** m=Mafia, d=Doctor, x=Detective, c1/c2=Citizens (not yet at night). */
+function classicRoom(): Room {
+  const roles: [string, Role][] = [["m", "MAFIA"], ["d", "DOCTOR"], ["x", "DETECTIVE"], ["c1", "CITIZEN"], ["c2", "CITIZEN"]];
+  return room(roles.map(([id, role]) => player(id, { role })), { round: 1 });
+}
+const nightRoom = () => atNight(classicRoom());
+
+/** m=Mafia, c1..c4=Citizens, plus one special role in seat "s". */
+function specialRoom(role: Role, phase: Room["phase"] = "LOBBY"): Room {
+  const ids: [string, Role][] = [["m", "MAFIA"], ["s", role], ["c1", "CITIZEN"], ["c2", "CITIZEN"], ["c3", "CITIZEN"], ["c4", "CITIZEN"]];
+  return room(ids.map(([id, r]) => player(id, { role: r })), { phase, round: 1 });
+}
+const act = (by: string, target: string): Action => ({ type: "NIGHT_ACT", by, target });
+const alive = (r: Room, id: string) => r.players.find((p) => p.id === id)!.alive;
+const votes = (by: string[], target: string) => by.map((b) => ({ type: "VOTE", by: b, target }) as Action);
 
 describe("roles", () => {
   it("deals exactly the configured roles", () => {
@@ -69,24 +101,11 @@ describe("roles", () => {
   });
 });
 
-describe("resolveNight", () => {
-  it("kills the Mafia target", () => {
-    expect(resolveNight({ mafiaVotes: { m: "c1" }, doctorTarget: "c2", detectiveTarget: null, sniperTarget: null }, Math.random).killedId).toBe("c1");
-  });
-  it("doctor save prevents the kill", () => {
-    expect(resolveNight({ mafiaVotes: { m: "c1" }, doctorTarget: "c1", detectiveTarget: null, sniperTarget: null }, Math.random).killedId).toBeNull();
-  });
-  it("uses the Mafia majority", () => {
-    expect(resolveNight({ mafiaVotes: { m1: "a", m2: "b", m3: "b" }, doctorTarget: null, detectiveTarget: null, sniperTarget: null }, () => 0).killedId).toBe("b");
-  });
-  it("breaks a Mafia tie at random", () => {
-    const night = { mafiaVotes: { m1: "a", m2: "b" }, doctorTarget: null, detectiveTarget: null, sniperTarget: null };
-    expect(resolveNight(night, () => 0).killedId).toBe("a");
-    expect(resolveNight(night, () => 0.99).killedId).toBe("b");
-  });
-  it("no Mafia votes means no kill", () => {
-    expect(resolveNight({ mafiaVotes: {}, doctorTarget: null, detectiveTarget: null, sniperTarget: null }, Math.random).killedId).toBeNull();
-  });
+describe("resolveMafiaKill", () => {
+  const night = (mafiaTarget: string | null, doctorTarget: string | null) => ({ ...emptyNight(), mafiaTarget, doctorTarget });
+  it("kills the Godfather's target", () => expect(resolveMafiaKill(night("c1", "c2")).killedId).toBe("c1"));
+  it("doctor save prevents the kill", () => expect(resolveMafiaKill(night("c1", "c1")).killedId).toBeNull());
+  it("no target means no kill", () => expect(resolveMafiaKill(night(null, null)).killedId).toBeNull());
 });
 
 describe("tallyVotes", () => {
@@ -121,54 +140,138 @@ describe("state machine", () => {
     expect(reduce(r, { type: "START", by: "h" }, ctx)).toMatchObject({ ok: false, error: expect.stringMatching(/3 لاعبين/) });
   });
 
-  it("START deals roles to everyone except the GM and enters ROLE_REVEAL", () => {
+  it("START deals roles to everyone except the GM, names a Godfather, and enters ROLE_REVEAL", () => {
     const r = room(["h", "a", "b", "c", "d"].map((id) => player(id, { isGM: id === "h" })));
     const next = run(r, { type: "START", by: "h" });
     expect(next.phase).toBe("ROLE_REVEAL");
     expect(next.players.find((p) => p.id === "h")!.role).toBeNull();
     expect(next.players.filter((p) => p.role).length).toBe(4);
+    expect(next.players.find((p) => p.id === next.godfatherId)!.role).toBe("MAFIA");
     expect(r.phase).toBe("LOBBY"); // input untouched
   });
 
-  it("all reveal acks start the first night with a deadline", () => {
+  it("all reveal acks start the first night on the Mafia turn", () => {
     const r = room(["h", "a", "b", "c"].map((id) => player(id)));
     const next = run(r, { type: "START", by: "h" }, ...["h", "a", "b", "c"].map((by) => ({ type: "REVEAL_ACK", by }) as Action));
     expect(next.phase).toBe("NIGHT");
-    expect(next.deadline).toBe(ctx.now + DEFAULT_SETTINGS.nightSec * 1000);
-  });
-
-  it("night resolves once every night actor has acted", () => {
-    let r = run(nightRoom(), { type: "NIGHT_ACT", by: "m", target: "c1" }, { type: "NIGHT_ACT", by: "d", target: "c2" });
-    expect(r.phase).toBe("NIGHT");
-    r = run(r, { type: "NIGHT_ACT", by: "x", target: "m" });
-    expect(r.phase).toBe("DAY");
-    expect(r.players.find((p) => p.id === "c1")!.alive).toBe(false);
-    expect(r.announcements.at(-1)).toMatchObject({ kind: "NIGHT", killedIds: ["c1"] });
-    expect(r.investigations.x).toEqual([{ round: 1, targetId: "m", isMafia: true }]);
-  });
-
-  it("rejects illegal night actions", () => {
-    const r = nightRoom();
-    expect(reduce(r, { type: "NIGHT_ACT", by: "c1", target: "m" }, ctx).ok).toBe(false);
-    expect(reduce(r, { type: "NIGHT_ACT", by: "m", target: "m" }, ctx).ok).toBe(false);
-    const once = run(r, { type: "NIGHT_ACT", by: "x", target: "c1" });
-    expect(reduce(once, { type: "NIGHT_ACT", by: "x", target: "c2" }, ctx).ok).toBe(false);
+    expect(next.night.turn).toBe("MAFIA");
+    expect(next.deadline).toBe(ctx.now + TURN_MS);
   });
 
   it("voting out the last Mafia ends the game for the town", () => {
     const r = run(
-      { ...nightRoom(), phase: "VOTING" },
+      { ...classicRoom(), phase: "VOTING" },
       ...["d", "x", "c1", "c2"].map((by) => ({ type: "VOTE", by, target: "m" }) as Action),
       { type: "VOTE", by: "m", target: "c1" },
     );
     expect(r.phase).toBe("GAME_OVER");
     expect(r.winner).toBe("TOWN");
   });
+});
 
-  it("a timeout only fires for the current deadline", () => {
-    const r = { ...nightRoom(), deadline: 5_000 };
+describe("sequential night turns", () => {
+  it("runs Mafia → Doctor → Detective, then resolves", () => {
+    let r = nightRoom();
+    expect(r.night.turn).toBe("MAFIA");
+    expect(r.night.queue).toEqual(["DOCTOR", "DETECTIVE"]);
+
+    r = run(r, act("m", "c1"));
+    expect(r.night.turn).toBe("DOCTOR");
+    r = run(r, act("d", "c2"));
+    expect(r.night.turn).toBe("DETECTIVE");
+    r = run(r, act("x", "m"));
+
+    expect(r.phase).toBe("DAY");
+    expect(alive(r, "c1")).toBe(false);
+    expect(r.announcements.at(-1)).toMatchObject({ kind: "NIGHT", killedIds: ["c1"] });
+    expect(r.investigations.x).toEqual([{ round: 1, targetId: "m", isMafia: true }]);
+  });
+
+  it("nobody can act out of turn", () => {
+    const r = nightRoom();
+    expect(reduce(r, act("d", "c1"), ctx)).toMatchObject({ ok: false, error: "ليس دورك الآن." });
+    expect(reduce(r, act("x", "m"), ctx).ok).toBe(false);
+    expect(reduce(r, act("c1", "m"), ctx).ok).toBe(false);
+    expect(reduce(r, act("m", "m"), ctx).ok).toBe(false); // can't target Mafia
+    const doctorTurn = run(r, act("m", "c1"));
+    expect(reduce(doctorTurn, act("m", "c2"), ctx).ok).toBe(false); // Mafia's turn is over
+  });
+
+  it("each turn has its own timer; a timeout moves to the next turn only", () => {
+    const r = nightRoom();
+    expect(wakeAt(r)).toBe(ctx.now + TURN_MS);
     expect(reduce(r, { type: "TIMEOUT", deadline: 4_000 }, ctx).ok).toBe(false);
-    expect(run(r, { type: "TIMEOUT", deadline: 5_000 }).phase).toBe("DAY");
+    const next = run(r, { type: "TIMEOUT", deadline: wakeAt(r)! });
+    expect(next.phase).toBe("NIGHT");
+    expect(next.night.turn).toBe("DOCTOR");
+    expect(next.night.mafiaTarget).toBeNull();
+  });
+
+  it("a dead role's turn still runs, with the same visible countdown, then skips itself", () => {
+    const base = classicRoom();
+    base.players.find((p) => p.id === "d")!.alive = false;
+    let r = run(atNight(base), act("m", "c1"));
+    expect(r.night.turn).toBe("DOCTOR");
+    expect(r.deadline).toBe(ctx.now + TURN_MS); // looks like any other turn
+    expect(r.night.ghostEndsAt).toBeGreaterThan(ctx.now);
+    expect(r.night.ghostEndsAt).toBeLessThan(r.deadline!);
+    expect(toPublicView(r)).not.toHaveProperty("night");
+    expect(JSON.stringify(toPlayerView(r, "c1"))).not.toContain("ghost");
+
+    r = run(r, { type: "TIMEOUT", deadline: wakeAt(r)! });
+    expect(r.night.turn).toBe("DETECTIVE");
+  });
+
+  it("only the roles the host enabled get a turn", () => {
+    expect(atNight(specialRoom("SHEIK")).night.queue).toEqual([]); // Sheik has no night action
+    expect(atNight(specialRoom("SNIPER")).night.queue).toEqual(["SNIPER"]);
+  });
+});
+
+describe("Godfather", () => {
+  /** m and m2 are Mafia; rng 0 makes m the first Godfather. */
+  const twoMafia = () => {
+    const r = classicRoom();
+    r.players.push(player("m2", { role: "MAFIA" }), player("c3", { role: "CITIZEN" }));
+    return r;
+  };
+
+  it("only the Godfather can choose the kill", () => {
+    const r = atNight(twoMafia());
+    expect(r.godfatherId).toBe("m");
+    expect(reduce(r, act("m2", "c1"), ctx)).toMatchObject({ ok: false, error: "وحده كبير المافيا يقرر الضحية." });
+    expect(reduce(r, { type: "NIGHT_SELECT", by: "m2", target: "c1" }, ctx).ok).toBe(false);
+    expect(run(r, act("m", "c1")).night.mafiaTarget).toBe("c1");
+  });
+
+  it("the other Mafia see the Godfather's pick live; nobody else does", () => {
+    const r = run(atNight(twoMafia()), { type: "NIGHT_SELECT", by: "m", target: "c2" });
+    expect(toPlayerView(r, "m2")).toMatchObject({ godfatherId: "m", mafiaSelection: "c2", nightTurn: "MAFIA" });
+    const citizen = toPlayerView(r, "c1");
+    expect(citizen.godfatherId).toBeUndefined();
+    expect(citizen.mafiaSelection).toBeUndefined();
+    expect(toPlayerView(run(r, act("m", "c2")), "m2").mafiaSelection).toBeUndefined(); // Mafia turn over
+  });
+
+  it("if time runs out, the Godfather's highlighted pick still counts", () => {
+    const r = run(atNight(twoMafia()), { type: "NIGHT_SELECT", by: "m", target: "c2" });
+    expect(run(r, { type: "TIMEOUT", deadline: wakeAt(r)! }).night.mafiaTarget).toBe("c2");
+  });
+
+  it("passes to a living Mafia member when the Godfather is voted out", () => {
+    const r = run({ ...twoMafia(), phase: "VOTING" }, ...votes(["d", "x", "c1", "c2", "c3", "m2"], "m"), { type: "VOTE", by: "m", target: "c1" });
+    expect(alive(r, "m")).toBe(false);
+    expect(r.godfatherId).toBe("m2");
+    expect(r.phase).toBe("NIGHT");
+    expect(run(r, act("m2", "c1")).night.mafiaTarget).toBe("c1");
+  });
+
+  it("passes on when the Sniper kills the Godfather at night", () => {
+    const base = specialRoom("SNIPER");
+    base.players.push(player("m2", { role: "MAFIA" }), player("c5", { role: "CITIZEN" }));
+    const r = run(atNight(base), act("m", "c1"), act("s", "m"));
+    expect(alive(r, "m")).toBe(false);
+    expect(r.godfatherId).toBe("m2");
   });
 });
 
@@ -176,18 +279,15 @@ describe("view redaction", () => {
   it("a citizen sees only their own role", () => {
     const v = toPlayerView(nightRoom(), "c1");
     expect(v.players.filter((p) => p.role).map((p) => p.id)).toEqual(["c1"]);
-    expect(v.mafiaVotes).toBeUndefined();
     expect(v.gm).toBeUndefined();
     expect(JSON.stringify(v)).not.toContain("t-");
   });
 
-  it("Mafia see each other and their votes, nothing else", () => {
-    const r = nightRoom();
+  it("Mafia see each other", () => {
+    const r = classicRoom();
     r.players.push(player("m2", { role: "MAFIA" }));
-    r.night.mafiaVotes = { m2: "c1" };
-    const v = toPlayerView(r, "m");
+    const v = toPlayerView(atNight(r), "m");
     expect(v.players.filter((p) => p.role).map((p) => p.id).sort()).toEqual(["m", "m2"]);
-    expect(v.mafiaVotes).toEqual({ m2: "c1" });
   });
 
   it("the GM sees everything", () => {
@@ -196,6 +296,7 @@ describe("view redaction", () => {
     const v = toPlayerView(r, "gm");
     expect(v.players.filter((p) => p.role)).toHaveLength(5);
     expect(v.gm).toBeDefined();
+    expect(v.godfatherId).toBe("m");
   });
 
   it("dead players' roles are revealed only when the setting is on", () => {
@@ -207,16 +308,6 @@ describe("view redaction", () => {
     expect(toPlayerView(r, "c1").players.find((p) => p.id === "d")!.role).toBe("DOCTOR");
   });
 });
-
-// ---------- Custom roles ----------
-
-/** m=Mafia, c1..c4=Citizens, plus one special role in seat "s". */
-function withSpecial(role: Role, phase: Room["phase"] = "NIGHT"): Room {
-  const ids: [string, Role][] = [["m", "MAFIA"], ["s", role], ["c1", "CITIZEN"], ["c2", "CITIZEN"], ["c3", "CITIZEN"], ["c4", "CITIZEN"]];
-  return room(ids.map(([id, r]) => player(id, { role: r })), { phase, round: 1 });
-}
-const alive = (r: Room, id: string) => r.players.find((p) => p.id === id)!.alive;
-const votes = (by: string[], target: string) => by.map((b) => ({ type: "VOTE", by: b, target }) as Action);
 
 describe("settings", () => {
   it("enabling the Sniper forces the Detective off", () => {
@@ -237,7 +328,7 @@ describe("settings", () => {
 
 describe("Sniper", () => {
   it("shooting Mafia kills only the target and spends the bullet", () => {
-    const r = run(withSpecial("SNIPER"), { type: "NIGHT_ACT", by: "s", target: "m" }, { type: "NIGHT_ACT", by: "m", target: "c1" });
+    const r = run(atNight(specialRoom("SNIPER")), act("m", "c1"), act("s", "m"));
     expect(r.phase).toBe("GAME_OVER");
     expect([alive(r, "m"), alive(r, "s"), alive(r, "c1")]).toEqual([false, true, false]);
     expect(r.sniperShotUsed).toBe(true);
@@ -245,58 +336,60 @@ describe("Sniper", () => {
   });
 
   it("shooting a non-Mafia kills both target and Sniper, even if the doctor saved them", () => {
-    const base = withSpecial("SNIPER");
+    const base = specialRoom("SNIPER");
     base.players.push(player("d", { role: "DOCTOR" }));
-    const r = run(base, { type: "NIGHT_ACT", by: "d", target: "c2" }, { type: "NIGHT_ACT", by: "s", target: "c2" }, { type: "NIGHT_ACT", by: "m", target: "c1" });
+    base.settings.doctor = true;
+    const r = run(atNight(base), act("m", "c1"), act("d", "c2"), act("s", "c2"));
     expect(r.phase).toBe("DAY");
     expect([alive(r, "c2"), alive(r, "s"), alive(r, "c1")]).toEqual([false, false, false]);
     expect(r.announcements.at(-1)!.killedIds.sort()).toEqual(["c1", "c2", "s"]);
   });
 
-  it("can hold fire, and the night waits for that decision", () => {
-    let r = run(withSpecial("SNIPER"), { type: "NIGHT_ACT", by: "m", target: "c1" });
-    expect(r.phase).toBe("NIGHT");
-    r = run(r, { type: "NIGHT_ACT", by: "s", target: "SKIP" });
+  it("can hold fire on its turn", () => {
+    let r = run(atNight(specialRoom("SNIPER")), act("m", "c1"));
+    expect(r.night.turn).toBe("SNIPER");
+    r = run(r, act("s", "SKIP"));
     expect(r.phase).toBe("DAY");
     expect(r.sniperShotUsed).toBe(false);
   });
 
-  it("has only one bullet per game", () => {
-    const r = { ...withSpecial("SNIPER"), sniperShotUsed: true };
-    expect(reduce(r, { type: "NIGHT_ACT", by: "s", target: "m" }, ctx)).toMatchObject({ ok: false });
-    // With the bullet spent, the Sniper is no longer waited on.
-    expect(run(r, { type: "NIGHT_ACT", by: "m", target: "c1" }).phase).toBe("DAY");
+  it("has only one bullet per game; the spent Sniper's turn runs as a ghost turn", () => {
+    const r = run(atNight({ ...specialRoom("SNIPER"), sniperShotUsed: true }), act("m", "c1"));
+    expect(r.night.turn).toBe("SNIPER");
+    expect(r.night.ghostEndsAt).not.toBeNull();
+    expect(reduce(r, act("s", "m"), ctx).ok).toBe(false);
+    expect(run(r, { type: "TIMEOUT", deadline: wakeAt(r)! }).phase).toBe("DAY");
   });
 
   it("only the Sniper can skip", () => {
-    expect(reduce(withSpecial("SNIPER"), { type: "NIGHT_ACT", by: "m", target: "SKIP" }, ctx).ok).toBe(false);
+    expect(reduce(atNight(specialRoom("SNIPER")), act("m", "SKIP"), ctx).ok).toBe(false);
   });
 });
 
 describe("Sheik of Citizens", () => {
   it("survives his first conviction by revealing, then votes with weight 3", () => {
-    let r = run(withSpecial("SHEIK", "VOTING"), ...votes(["m", "c1", "c2", "c3"], "s"), { type: "VOTE", by: "c4", target: "m" }, { type: "VOTE", by: "s", target: "m" });
+    let r = run(specialRoom("SHEIK", "VOTING"), ...votes(["m", "c1", "c2", "c3"], "s"), { type: "VOTE", by: "c4", target: "m" }, { type: "VOTE", by: "s", target: "m" });
     expect(alive(r, "s")).toBe(true);
     expect(r.players.find((p) => p.id === "s")!.revealed).toBe(true);
     expect(r.announcements.at(-1)).toMatchObject({ kind: "VOTE", killedIds: [], revealedId: "s" });
     expect(r.phase).toBe("NIGHT");
     expect(toPlayerView(r, "c1").players.find((p) => p.id === "s")).toMatchObject({ role: "SHEIK", voteWeight: 3 });
 
-    // Next day: Sheik (3) + c1 (1) outvote three others for c2.
+    // Next day: Sheik (3) + c1 (1) outvote three others for c4.
     r = run({ ...r, phase: "VOTING", votes: {} }, { type: "VOTE", by: "s", target: "m" }, { type: "VOTE", by: "c1", target: "m" }, ...votes(["m", "c2", "c3"], "c4"), { type: "VOTE", by: "c4", target: "c3" });
     expect(r.announcements.at(-1)!.tally).toMatchObject({ m: 4, c4: 3 });
     expect(alive(r, "m")).toBe(false);
   });
 
   it("is executed normally the second time", () => {
-    const r = withSpecial("SHEIK", "VOTING");
+    const r = specialRoom("SHEIK", "VOTING");
     r.players.find((p) => p.id === "s")!.revealed = true;
     const next = run(r, ...votes(["m", "c1", "c2", "c3", "c4"], "s"), { type: "VOTE", by: "s", target: "m" });
     expect(alive(next, "s")).toBe(false);
   });
 
   it("dies to the Mafia at night without revealing", () => {
-    const r = run(withSpecial("SHEIK"), { type: "NIGHT_ACT", by: "m", target: "s" });
+    const r = run(atNight(specialRoom("SHEIK")), act("m", "s"));
     expect(alive(r, "s")).toBe(false);
     expect(r.players.find((p) => p.id === "s")!.revealed).toBe(false);
   });
@@ -304,7 +397,7 @@ describe("Sheik of Citizens", () => {
 
 describe("Upright Citizen", () => {
   it("when voted out, drags down a player of their choice before the night", () => {
-    let r = run(withSpecial("UPRIGHT", "VOTING"), ...votes(["m", "c1", "c2", "c3", "c4"], "s"), { type: "VOTE", by: "s", target: "m" });
+    let r = run(specialRoom("UPRIGHT", "VOTING"), ...votes(["m", "c1", "c2", "c3", "c4"], "s"), { type: "VOTE", by: "s", target: "m" });
     expect(r.phase).toBe("REVENGE");
     expect(r.revenge).toEqual({ uprightId: "s" });
     expect(r.deadline).toBe(ctx.now + 30_000);
@@ -320,7 +413,7 @@ describe("Upright Citizen", () => {
   });
 
   it("taking nobody (timeout) moves on to the next night", () => {
-    let r = run(withSpecial("UPRIGHT", "VOTING"), ...votes(["m", "c1", "c2", "c3", "c4"], "s"), { type: "VOTE", by: "s", target: "m" });
+    let r = run(specialRoom("UPRIGHT", "VOTING"), ...votes(["m", "c1", "c2", "c3", "c4"], "s"), { type: "VOTE", by: "s", target: "m" });
     r = run(r, { type: "TIMEOUT", deadline: r.deadline! });
     expect(r.phase).toBe("NIGHT");
     expect(r.round).toBe(2);
@@ -328,7 +421,7 @@ describe("Upright Citizen", () => {
   });
 
   it("gets no revenge when killed at night", () => {
-    const r = run(withSpecial("UPRIGHT"), { type: "NIGHT_ACT", by: "m", target: "s" });
+    const r = run(atNight(specialRoom("UPRIGHT")), act("m", "s"));
     expect(r.phase).toBe("DAY");
     expect(r.revenge).toBeNull();
   });
@@ -336,29 +429,29 @@ describe("Upright Citizen", () => {
 
 describe("projector safety", () => {
   it("the public screen view carries no secrets", () => {
-    const r = nightRoom();
-    r.night.mafiaVotes = { m: "c1" };
+    const r = run(nightRoom(), { type: "NIGHT_SELECT", by: "m", target: "c1" });
     r.investigations = { x: [{ round: 1, targetId: "m", isMafia: true }] };
-    r.log = [{ round: 1, phase: "NIGHT", text: "secret", secret: true, at: 0 }];
     const v = toPublicView(r);
+    expect(v.nightTurn).toBe("MAFIA"); // whose turn it is is public, like a narrator calling it
     expect(v.players.filter((p) => p.role)).toHaveLength(0);
     expect(v.meId).toBe("");
-    expect(v.mafiaVotes).toBeUndefined();
+    expect(v.godfatherId).toBeUndefined();
+    expect(v.mafiaSelection).toBeUndefined();
     expect(v.investigations).toBeUndefined();
     expect(v.gm).toBeUndefined();
     expect(v.log).toHaveLength(0);
-    expect(JSON.stringify(v)).not.toMatch(/MAFIA|DOCTOR|DETECTIVE|t-/);
+    expect(JSON.stringify(v)).not.toMatch(/"role"|"c1"\]|t-m|ghost/);
   });
 
   it("only public role reveals reach the screen", () => {
-    const r = withSpecial("SHEIK", "DAY");
+    const r = specialRoom("SHEIK", "DAY");
     r.players.find((p) => p.id === "s")!.revealed = true;
     expect(toPublicView(r).players.filter((p) => p.role).map((p) => p.id)).toEqual(["s"]);
     expect(toPublicView({ ...r, phase: "GAME_OVER" }).players.filter((p) => p.role)).toHaveLength(6);
   });
 
-  it("the night ready-count is hidden from everyone but the GM", () => {
-    const r = run(nightRoom(), { type: "NIGHT_ACT", by: "m", target: "c1" });
+  it("night turn progress is shown to the GM only", () => {
+    const r = run(nightRoom(), act("m", "c1"));
     expect(toPlayerView(r, "c1").progress).toEqual({ done: 0, required: 0 });
     expect(toPublicView(r).progress).toEqual({ done: 0, required: 0 });
     r.players.push(player("gm", { isGM: true }));

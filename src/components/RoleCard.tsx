@@ -10,7 +10,7 @@ import { ROLE_BLURB, roleTitle } from "@/shared/roleText";
  * name stays blurred unless the card is held down, so it's never left
  * readable for a neighbour to glance at.
  */
-export function RoleCard({ role, teammates, large = false }: { role: Role; teammates?: string[]; large?: boolean }) {
+export function RoleCard({ role, teammates, godfather = false, large = false }: { role: Role; teammates?: string[]; godfather?: boolean; large?: boolean }) {
   const [held, setHeld] = useState(false);
   const show = () => {
     setHeld(true);
@@ -38,11 +38,12 @@ export function RoleCard({ role, teammates, large = false }: { role: Role; teamm
           <span className="mt-1 text-sm text-neutral-300">دورك:</span>
           {/* Hidden: same placeholder and colour for every role, so length or tint gives nothing away. */}
           <span className={`font-black ${large ? "text-3xl" : "text-2xl"} ${held ? (mafia ? "neon-text" : "text-white") : "text-neutral-400 blur-[6px]"}`}>
-            {held ? roleTitle(role) : "●●●●● (●●●●)"}
+            {held ? (godfather ? "كبير المافيا (Godfather)" : roleTitle(role)) : "●●●●● (●●●●)"}
           </span>
           {held ? (
             <>
               {large && <span className="mt-2 text-sm text-neutral-300">{ROLE_BLURB[role]}</span>}
+              {godfather && <span className="mt-1 text-sm text-neutral-300">أنت من يقرر ضحية المافيا كل ليلة.</span>}
               {teammates && teammates.length > 0 && <span className="mt-1 text-sm text-ember">رفاقك في المافيا: {teammates.join("، ")}</span>}
             </>
           ) : (

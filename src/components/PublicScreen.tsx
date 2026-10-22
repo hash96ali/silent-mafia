@@ -2,7 +2,7 @@
 
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useState } from "react";
-import { ROLE_LABEL_AR } from "@/shared/roleText";
+import { NIGHT_TURN_LABEL, ROLE_LABEL_AR } from "@/shared/roleText";
 import type { Announcement, Phase, PlayerView } from "@/shared/types";
 import { CrosshairIcon } from "./icons";
 import { TopBar } from "./PhaseTimer";
@@ -47,6 +47,10 @@ export function PublicScreen({ view, now }: { view: PlayerView; now: () => numbe
           {view.phase === "GAME_OVER" ? (view.winner === "MAFIA" ? "انتصرت المافيا وسيطرت على المدينة" : "انتصرت المدينة وتم القضاء على المافيا") : TAGLINE[view.phase]}
         </p>
       </header>
+
+      {view.nightTurn && (
+        <p className="glass neon mx-auto rounded-full px-10 py-3 text-3xl font-black text-white lg:text-4xl">الآن {NIGHT_TURN_LABEL[view.nightTurn]}</p>
+      )}
 
       {view.phase === "LOBBY" ? (
         <JoinCard code={view.code} />

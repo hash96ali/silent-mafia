@@ -7,7 +7,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sheik: false,
   sniper: false,
   upright: false,
-  nightSec: 60,
+  nightSec: 30,
   daySec: 180,
   voteSec: 60,
   revealRoleOnDeath: false,
@@ -23,6 +23,13 @@ export const LIMITS = {
 /** Room codes avoid I and O so they can't be confused with 1 and 0. */
 export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 export const CODE_LENGTH = 4;
+
+/**
+ * A night turn for a role that can't act still runs, for a random 6-14s, so
+ * players can't tell that role is dead. It never shows a different countdown.
+ */
+export const GHOST_TURN_MIN_MS = 6_000;
+export const GHOST_TURN_SPREAD_MS = 8_000;
 
 /** Time an executed Upright Citizen gets to pick who to drag down. */
 export const REVENGE_SEC = 30;

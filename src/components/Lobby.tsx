@@ -125,7 +125,7 @@ function SettingsForm({ settings, editable, onChange }: { settings: Settings; ed
     { key: "upright", role: "UPRIGHT" },
   ];
   const timers: [keyof Settings, string][] = [
-    ["nightSec", "مؤقت الليل"],
+    ["nightSec", "مؤقت كل دور ليلي"],
     ["daySec", "مؤقت النقاش"],
     ["voteSec", "مؤقت التصويت"],
   ];

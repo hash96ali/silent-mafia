@@ -9,6 +9,10 @@ export type Phase = (typeof PHASES)[number];
 export type Role = "MAFIA" | "DOCTOR" | "DETECTIVE" | "CITIZEN" | "SHEIK" | "SNIPER" | "UPRIGHT";
 export type Team = "MAFIA" | "TOWN";
 
+/** Night turns run one at a time, in this order; disabled roles are left out. */
+export const NIGHT_TURNS = ["MAFIA", "DOCTOR", "DETECTIVE", "SNIPER"] as const;
+export type NightTurn = (typeof NIGHT_TURNS)[number];
+
 export const SKIP = "SKIP" as const;
 export type VoteTarget = string | typeof SKIP;
 
@@ -20,7 +24,7 @@ export interface Settings {
   sheik: boolean;
   sniper: boolean;
   upright: boolean;
-  /** Phase durations in seconds; 0 disables the timer for that phase. */
+  /** Durations in seconds; 0 disables the timer. `nightSec` is per night turn. */
   nightSec: number;
   daySec: number;
   voteSec: number;
@@ -47,8 +51,20 @@ export interface Player {
 }
 
 export interface NightState {
-  /** mafia player id -> target id */
-  mafiaVotes: Record<string, string>;
+  /** Whose turn it is; null once every turn has run. */
+  turn: NightTurn | null;
+  /** Turns still to come tonight, in order. */
+  queue: NightTurn[];
+  /**
+   * Set when the current turn's role can't act (dead, or the Sniper's bullet is
+   * spent): the turn ends by itself at this time, earlier than the visible
+   * deadline, so it looks like any other turn. Server/GM only.
+   */
+  ghostEndsAt: number | null;
+  /** The Godfather's highlighted pick, shown live to the other Mafia. */
+  mafiaSelection: string | null;
+  /** The Godfather's confirmed kill. */
+  mafiaTarget: string | null;
   doctorTarget: string | null;
   detectiveTarget: string | null;
   /** A target id, SKIP to hold fire tonight, or null if undecided. */
@@ -98,6 +114,8 @@ export interface Room {
   /** detective id -> results */
   investigations: Record<string, Investigation[]>;
   sniperShotUsed: boolean;
+  /** The Mafia member who decides the kill; passes to another living Mafia member on death. */
+  godfatherId: string | null;
   /** Set during REVENGE: the executed Upright Citizen who is choosing. */
   revenge: { uprightId: string } | null;
   announcements: Announcement[];
@@ -145,8 +163,12 @@ export interface PlayerView {
   myNightTarget: string | null;
   myVote: VoteTarget | null;
   hasAckedReveal: boolean;
-  /** Mafia only: what each mafia teammate is voting for tonight. */
-  mafiaVotes?: Record<string, string>;
+  /** Whose night turn it is (public, like a narrator calling roles); null outside NIGHT. */
+  nightTurn: NightTurn | null;
+  /** Mafia, GM and game over only. */
+  godfatherId?: string;
+  /** Mafia only, during the Mafia turn: the Godfather's live pick. */
+  mafiaSelection?: string | null;
   /** Detective only. */
   investigations?: Investigation[];
   /** Sniper only: whether the single shot is still available. */
@@ -184,6 +206,8 @@ export interface ClientToServerEvents {
   "game:playAgain": (ack: Ack) => void;
   "reveal:ack": (ack: Ack) => void;
   "night:act": (p: { targetId: string }, ack: Ack<{ investigation?: Investigation }>) => void;
+  /** Godfather only: highlight a target for the rest of the Mafia before confirming. */
+  "night:select": (p: { targetId: string | null }, ack: Ack) => void;
   "vote:cast": (p: { targetId: VoteTarget }, ack: Ack) => void;
   "revenge:pick": (p: { targetId: string }, ack: Ack) => void;
   /** Projector screen: receive the public view of a room without joining it. */
