@@ -32,6 +32,10 @@ The night runs one role at a time: **Mafia → Doctor → Detective → Sniper**
 - **Godfather (كبير المافيا):** one Mafia member, chosen at random when roles are dealt, makes the kill. The other Mafia see his highlighted pick live but can't choose. If the Godfather dies (vote, Sniper, drag-down), a random living Mafia member takes over immediately. If his turn times out, his highlighted pick still counts.
 - **Dead or spent roles still get a turn.** It shows the same countdown and ends by itself after a random 6–14s, so nobody can tell that role is gone.
 
+## Phase changes
+
+Every phase change raises a full-screen card on all phones and the projector (icon, phase name, what just happened) and vibrates every phone together. Phases have their own colour: night red, day gold, voting violet. After the vote, a **result screen** (10s, host can skip) shows who was eliminated, the vote count per player, abstentions and how many didn't vote in time, before the game moves on. Individual votes stay secret.
+
 ## Architecture
 
 One Node process (`server.ts`) serves Next.js and Socket.io. The game state lives in server memory and is authoritative.

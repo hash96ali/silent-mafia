@@ -31,6 +31,9 @@ export const CODE_LENGTH = 4;
 export const GHOST_TURN_MIN_MS = 6_000;
 export const GHOST_TURN_SPREAD_MS = 8_000;
 
+/** How long the vote result stays on screen before the game moves on. */
+export const VERDICT_SEC = 10;
+
 /** Time an executed Upright Citizen gets to pick who to drag down. */
 export const REVENGE_SEC = 30;
 

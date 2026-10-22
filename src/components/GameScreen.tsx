@@ -2,9 +2,10 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { call } from "@/client/socket";
-import { SKIP, type Announcement, type Phase, type PlayerView, type PublicPlayer } from "@/shared/types";
-import { CrosshairIcon } from "./icons";
+import { SKIP, type Announcement, type PlayerView, type PublicPlayer } from "@/shared/types";
+import { BallotIcon, CrosshairIcon } from "./icons";
 import { LeaveButton } from "./Lobby";
+import { PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, recentAnnouncements, winnerText } from "./phases";
 import { TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
 import { RoleCard } from "./RoleCard";
@@ -12,34 +13,13 @@ import { SecretPanel } from "./SecretPanel";
 import { NIGHT_TURN_LABEL, ROLE_LABEL_AR } from "@/shared/roleText";
 import { Button, ErrorText, Panel, arDigits } from "./ui";
 
-const PHASE_TITLE: Record<Phase, string> = {
-  LOBBY: "الردهة",
-  ROLE_REVEAL: "كشف الأدوار",
-  NIGHT: "مرحلة الليل",
-  DAY: "مرحلة النهار",
-  VOTING: "مرحلة التصويت",
-  REVENGE: "انتقام المواطن الصالح",
-  GAME_OVER: "نهاية اللعبة",
-};
-
-const PHASE_TAGLINE: Record<Phase, string> = {
-  LOBBY: "",
-  ROLE_REVEAL: "اضغط مطولاً على الكارت لرؤية دورك بسرية",
-  NIGHT: "المدينة نائمة... اتخذ قرارك بصمت",
-  DAY: "استيقظت المدينة... ناقشوا من بينكم من المافيا",
-  VOTING: "صوّت بسرية لإخراج المشتبه به",
-  REVENGE: "المواطن الصالح يختار من يسحبه معه",
-  GAME_OVER: "انكشفت كل الأوراق",
-};
-
 type Run = (event: Parameters<typeof call>[0], ...args: unknown[]) => Promise<boolean>;
 
 export function GameScreen({ view, now }: { view: PlayerView; now: () => number }) {
   const [error, setError] = useState<string | null>(null);
   const me = view.players.find((p) => p.id === view.meId)!;
-  const canAdvance = (view.isHost || me.isGM) && ["ROLE_REVEAL", "NIGHT", "DAY", "VOTING", "REVENGE"].includes(view.phase);
-  // A drag-down follows the vote that caused it, so show both together.
-  const recent = view.announcements.slice(view.announcements.at(-1)?.kind === "REVENGE" ? -2 : -1);
+  const canAdvance = (view.isHost || me.isGM) && ["ROLE_REVEAL", "NIGHT", "DAY", "VOTING", "VERDICT", "REVENGE"].includes(view.phase);
+  const recent = recentAnnouncements(view);
   const night = view.phase === "NIGHT";
 
   const run: Run = async (event, ...args) => {
@@ -49,17 +29,18 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
     return res.ok;
   };
 
-  // Silent cue. Every living player buzzes at once, so a buzz in a quiet
-  // room never singles out who has a night role.
+  // Silent cues. Phase changes buzz every phone (PhaseCurtain); each later
+  // night turn buzzes every living player too, so a buzz never singles
+  // anyone out. The Mafia turn opens the night, so the curtain covers it.
   const myRevenge = view.phase === "REVENGE" && view.revengeBy === me.id;
-  const buzz = (me.alive && !me.isGM && (night || view.phase === "VOTING")) || myRevenge;
   useEffect(() => {
-    if (buzz) navigator.vibrate?.([40, 80, 40]);
-  }, [view.phase, view.round, view.nightTurn, buzz]);
+    if (night && me.alive && !me.isGM && view.nightTurn && view.nightTurn !== "MAFIA") navigator.vibrate?.([40, 80, 40]);
+  }, [view.nightTurn]); // only night-turn changes buzz here
 
   return (
-    <div className="flex flex-col gap-4">
-      {night && <div className="pointer-events-none fixed inset-0 -z-10 bg-black/60" aria-hidden />}
+    <div data-phase={view.phase} className="flex flex-col gap-4">
+      <PhaseBackdrop phase={view.phase} />
+      <PhaseCurtain view={view} />
       <TopBar subtitle="ليلة الغموض" deadline={view.deadline} now={now} night={night || view.phase === "ROLE_REVEAL"} />
 
       <header className="text-center">
@@ -122,10 +103,6 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
   );
 }
 
-function winnerText(view: PlayerView) {
-  return view.winner === "MAFIA" ? "انتصرت المافيا وسيطرت على المدينة" : "انتصرت المدينة وتم القضاء على المافيا";
-}
-
 function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run: Run }) {
   const alive = view.players.filter((p) => p.alive && !p.isGM);
   const nameOf = (id: string | null | undefined) => view.players.find((p) => p.id === id)?.name ?? "—";
@@ -151,6 +128,14 @@ function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
 
   // Each phase and each night turn starts covered again.
   const secretKey = `${view.phase}-${view.round}-${view.nightTurn ?? ""}`;
+  const verdict = view.announcements.at(-1);
+  if (view.phase === "VERDICT" && verdict) {
+    return (
+      <Panel title="نتيجة التصويت" eyebrow="Verdict" subtitle={view.revengeBy ? "بعدها يختار المواطن الصالح من يسحبه معه." : "بعدها يبدأ الليل."}>
+        <VoteTally a={verdict} view={view} />
+      </Panel>
+    );
+  }
   if (me.isGM) {
     return (
       <SecretPanel resetKey={secretKey}>
@@ -192,6 +177,7 @@ function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
           allowSkip="امتناع عن التصويت"
           confirmLabel={(id) => (id === SKIP ? "تأكيد الامتناع" : "تأكيد التصويت في الخفاء")}
           onConfirm={(id) => run("vote:cast", { targetId: id })}
+          Icon={BallotIcon}
         />
       </Panel>
       </SecretPanel>
@@ -341,6 +327,7 @@ function TargetPicker({
   allowSkip,
   note,
   onSelect,
+  Icon = CrosshairIcon,
 }: {
   candidates: PublicPlayer[];
   current: string | null;
@@ -350,6 +337,8 @@ function TargetPicker({
   note?: (id: string) => string;
   /** Called as the highlighted row changes, before confirming. */
   onSelect?: (id: string | null) => void;
+  /** Crosshair for night actions; the day vote uses a ballot so it never looks like a kill. */
+  Icon?: typeof CrosshairIcon;
 }) {
   const [selected, setSelectedState] = useState<string | null>(null);
   const setSelected = (id: string | null) => {
@@ -388,7 +377,7 @@ function TargetPicker({
             {lit ? (
               <span className="flex items-center gap-1 text-sm font-bold text-ember">
                 {isSelected ? "مختار" : "تم التأكيد"}
-                <CrosshairIcon className="size-4" />
+                <Icon className="size-4" />
               </span>
             ) : (
               <span className="size-5 rounded-md border border-white/10 bg-white/[0.04]" aria-hidden />
@@ -397,7 +386,7 @@ function TargetPicker({
         );
       })}
       {selected && (
-        <Button className="mt-2" disabled={busy} onClick={confirm} icon={<CrosshairIcon className="size-5" />}>
+        <Button className="mt-2" disabled={busy} onClick={confirm} icon={<Icon className="size-5" />}>
           {confirmLabel(selected)}
         </Button>
       )}
@@ -499,12 +488,5 @@ function Sleeping({ text }: { text: string }) {
 }
 
 function AnnouncementBanner({ a, view }: { a: Announcement; view: PlayerView }) {
-  const names = (ids: string[]) => ids.map((id) => view.players.find((p) => p.id === id)?.name ?? "؟").join(" و");
-  let text: string;
-  if (a.kind === "NIGHT") text = a.killedIds.length ? `قُتل ${names(a.killedIds)} الليلة الماضية.` : "نجا الجميع هذه الليلة.";
-  else if (a.kind === "REVENGE") text = `سحب ${names([a.byId!])} معه ${names(a.killedIds)}.`;
-  else if (a.revealedId && !a.killedIds.length) text = `انكشف ${names([a.revealedId])}: إنه شيخ المواطنين! ينجو ويصبح صوته بثلاثة أصوات.`;
-  else if (a.revealedId) text = `أُعدم ${names(a.killedIds)}، وكان ${ROLE_LABEL_AR.UPRIGHT}!`;
-  else text = a.killedIds.length ? `أعدمت المدينة ${names(a.killedIds)}.` : "لم تتفق المدينة. لم يُعدم أحد.";
-  return <p className="glass rounded-xl border-blood-soft/40 px-4 py-3 text-center text-sm font-semibold">{text}</p>;
+  return <p className="glass neon rounded-xl px-4 py-3 text-center text-base font-bold">{announcementText(a, view)}</p>;
 }

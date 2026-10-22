@@ -17,6 +17,8 @@ export function PlayerList({
   // Your own role, your Mafia teammates' and (for the GM) everyone's stay behind
   // a cover; here we only badge roles that are public, so a glance leaks nothing.
   const showRoles = view.phase === "GAME_OVER";
+  // A role is public once revealed, at game over, or on death when the host chose that.
+  const isPublic = (p: (typeof view.players)[number]) => showRoles || p.revealed || (!p.alive && view.settings.revealRoleOnDeath);
   return (
     <ul className="flex flex-col gap-2">
       {view.players.map((p, i) => (
@@ -35,7 +37,7 @@ export function PlayerList({
           </span>
           {p.isHost && <Badge>المضيف</Badge>}
           {p.isGM && <Badge>الراوي</Badge>}
-          {p.role && (showRoles || !p.alive || p.revealed) && <Badge tone={p.role === "MAFIA" ? "red" : p.revealed ? "gold" : "plain"}>{ROLE_LABEL_AR[p.role]}</Badge>}
+          {p.role && isPublic(p) && <Badge tone={p.role === "MAFIA" ? "red" : p.revealed ? "gold" : "plain"}>{ROLE_LABEL_AR[p.role]}</Badge>}
           {p.revealed && p.alive && <Badge tone="gold">مكشوف</Badge>}
           {p.voteWeight > 1 && p.alive && <Badge tone="gold">صوت ×{arDigits(p.voteWeight)}</Badge>}
           {dragged.has(p.id) && <Badge>مسحوب</Badge>}

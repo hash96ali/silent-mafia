@@ -2,8 +2,11 @@
 // `Room` and `Player` are server-only (they hold secrets); clients only ever
 // receive a `PlayerView`, built per player by src/server/view.ts.
 
-/** REVENGE: an executed Upright Citizen picks one player to drag down with them. */
-export const PHASES = ["LOBBY", "ROLE_REVEAL", "NIGHT", "DAY", "VOTING", "REVENGE", "GAME_OVER"] as const;
+/**
+ * VERDICT: a pause after the vote so everyone sees the result and tally.
+ * REVENGE: an executed Upright Citizen picks one player to drag down with them.
+ */
+export const PHASES = ["LOBBY", "ROLE_REVEAL", "NIGHT", "DAY", "VOTING", "VERDICT", "REVENGE", "GAME_OVER"] as const;
 export type Phase = (typeof PHASES)[number];
 
 export type Role = "MAFIA" | "DOCTOR" | "DETECTIVE" | "CITIZEN" | "SHEIK" | "SNIPER" | "UPRIGHT";
@@ -88,6 +91,8 @@ export interface Announcement {
   byId?: string;
   /** Weighted vote tally (target id or SKIP -> votes), VOTE announcements only. */
   tally?: Record<string, number>;
+  /** VOTE: living players who didn't vote before the timer ended. */
+  notVoted?: number;
 }
 
 export interface LogEntry {

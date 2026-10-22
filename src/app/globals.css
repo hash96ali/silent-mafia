@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Noir neon theme: near-black glass panels lit by red neon. */
+/* Noir neon theme: near-black glass panels lit by neon. */
 @theme {
   --color-ink: #070709;
   --color-panel: #121216;
@@ -12,29 +12,61 @@
   --font-display: var(--font-cairo), system-ui, sans-serif;
 }
 
+/*
+ * Each phase relights the whole UI so a change is obvious at a glance:
+ * night red, day gold, voting violet. `--glow` is the neon colour as RGB.
+ */
+:root {
+  --glow: 255 30 40;
+  --sky: 140 10 18;
+}
+[data-phase="DAY"] {
+  --color-blood: #d98a00;
+  --color-blood-soft: #ffb43a;
+  --color-ember: #ffc56b;
+  --glow: 255 170 40;
+  --sky: 170 100 10;
+}
+[data-phase="VOTING"],
+[data-phase="VERDICT"] {
+  --color-blood: #7c4dff;
+  --color-blood-soft: #b18cff;
+  --color-ember: #c9b0ff;
+  --glow: 150 100 255;
+  --sky: 70 30 150;
+}
+
 html {
   color-scheme: dark;
 }
 
 body {
   color: #ecebf2;
-  background:
-    radial-gradient(120% 60% at 50% 115%, rgb(140 10 18 / 0.45), transparent 60%),
-    radial-gradient(80% 40% at 50% -10%, rgb(90 10 14 / 0.25), transparent 70%),
-    var(--color-ink);
-  background-attachment: fixed;
+  background: var(--color-ink);
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
 
 @layer components {
-  /* Frosted panel with a faint red rim. */
+  .phase-backdrop {
+    background:
+      radial-gradient(120% 60% at 50% 115%, rgb(var(--sky) / 0.5), transparent 60%),
+      radial-gradient(90% 45% at 50% -10%, rgb(var(--sky) / 0.35), transparent 70%),
+      var(--color-ink);
+  }
+  .phase-backdrop[data-dark="true"] {
+    background:
+      radial-gradient(120% 60% at 50% 115%, rgb(var(--sky) / 0.3), transparent 60%),
+      #000;
+  }
+
+  /* Frosted panel with a faint neon rim. */
   .glass {
     background: linear-gradient(180deg, rgb(28 28 34 / 0.85), rgb(14 14 18 / 0.85));
     border: 1px solid rgb(255 255 255 / 0.08);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.04),
-      0 0 0 1px rgb(224 20 30 / 0.12),
+      0 0 0 1px rgb(var(--glow) / 0.12),
       0 10px 30px -10px rgb(0 0 0 / 0.8);
     backdrop-filter: blur(10px);
   }
@@ -43,25 +75,25 @@ body {
   .neon {
     border-color: var(--color-blood-soft);
     box-shadow:
-      0 0 0 1px rgb(255 59 69 / 0.6),
-      0 0 14px rgb(255 30 40 / 0.55),
-      inset 0 0 14px rgb(255 30 40 / 0.18);
+      0 0 0 1px rgb(var(--glow) / 0.6),
+      0 0 14px rgb(var(--glow) / 0.55),
+      inset 0 0 14px rgb(var(--glow) / 0.18);
   }
 
   .neon-text {
     color: var(--color-blood-soft);
     text-shadow:
-      0 0 6px rgb(255 40 50 / 0.8),
-      0 0 22px rgb(255 20 30 / 0.55);
+      0 0 6px rgb(var(--glow) / 0.8),
+      0 0 22px rgb(var(--glow) / 0.55);
   }
 
   .neon-button {
-    background: linear-gradient(180deg, #ff2a35, #b30d16);
-    border: 1px solid #ff6b72;
+    background: linear-gradient(180deg, var(--color-blood-soft), var(--color-blood));
+    border: 1px solid var(--color-ember);
     box-shadow:
-      0 0 0 1px rgb(255 80 90 / 0.4),
-      0 0 22px rgb(255 25 35 / 0.7),
-      0 0 50px rgb(255 25 35 / 0.35),
+      0 0 0 1px rgb(var(--glow) / 0.4),
+      0 0 22px rgb(var(--glow) / 0.7),
+      0 0 50px rgb(var(--glow) / 0.35),
       inset 0 1px 0 rgb(255 255 255 / 0.35);
   }
   .neon-button:active {
@@ -78,8 +110,33 @@ body {
   .neon-rule {
     height: 1px;
     background: linear-gradient(90deg, transparent, var(--color-blood-soft), transparent);
-    box-shadow: 0 0 10px rgb(255 30 40 / 0.8);
+    box-shadow: 0 0 10px rgb(var(--glow) / 0.8);
   }
+
+  /* Phase-change card: fades in, holds, fades out (3.2s, matching CURTAIN_MS). */
+  .curtain {
+    background: radial-gradient(circle at 50% 45%, rgb(var(--sky) / 0.75), rgb(0 0 0 / 0.94) 70%);
+    animation: curtain 3.2s ease-in-out both;
+  }
+  .curtain-icon {
+    filter: drop-shadow(0 0 18px rgb(var(--glow) / 0.9));
+    animation: curtain-pop 0.7s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+}
+
+@keyframes curtain {
+  0% { opacity: 0; }
+  12% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes curtain-pop {
+  from { transform: scale(0.4) rotate(-20deg); opacity: 0; }
+  to { transform: scale(1) rotate(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .curtain, .curtain-icon { animation-duration: 0.01s; }
+  .curtain { animation: none; }
 }
 
 /* Long-press on a role card shouldn't open the text selection / callout menu. */

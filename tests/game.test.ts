@@ -82,6 +82,11 @@ function specialRoom(role: Role, phase: Room["phase"] = "LOBBY"): Room {
   return room(ids.map(([id, r]) => player(id, { role: r })), { phase, round: 1 });
 }
 const act = (by: string, target: string): Action => ({ type: "NIGHT_ACT", by, target });
+/** Lets the post-vote result screen time out, as it does in a real game. */
+const pastVerdict = (r: Room): Room => {
+  expect(r.phase).toBe("VERDICT");
+  return run(r, { type: "TIMEOUT", deadline: wakeAt(r)! });
+};
 const alive = (r: Room, id: string) => r.players.find((p) => p.id === id)!.alive;
 const votes = (by: string[], target: string) => by.map((b) => ({ type: "VOTE", by: b, target }) as Action);
 
@@ -164,8 +169,23 @@ describe("state machine", () => {
       ...["d", "x", "c1", "c2"].map((by) => ({ type: "VOTE", by, target: "m" }) as Action),
       { type: "VOTE", by: "m", target: "c1" },
     );
-    expect(r.phase).toBe("GAME_OVER");
-    expect(r.winner).toBe("TOWN");
+    expect(alive(r, "m")).toBe(false);
+    const end = pastVerdict(r);
+    expect(end.phase).toBe("GAME_OVER");
+    expect(end.winner).toBe("TOWN");
+  });
+
+  it("after the vote, the result stays on screen before the game moves on", () => {
+    const r = run({ ...classicRoom(), phase: "VOTING" }, ...votes(["d", "x"], "c1"), { type: "VOTE", by: "c1", target: "SKIP" });
+    // Not everyone voted: end voting by timer.
+    const v = run({ ...r, deadline: 9_000 }, { type: "TIMEOUT", deadline: 9_000 });
+    expect(v.phase).toBe("VERDICT");
+    expect(v.deadline).toBe(ctx.now + 10_000);
+    expect(v.announcements.at(-1)).toMatchObject({ kind: "VOTE", killedIds: ["c1"], tally: { c1: 2, SKIP: 1 }, notVoted: 2 });
+    expect(toPublicView(v).announcements.at(-1)!.tally).toEqual({ c1: 2, SKIP: 1 }); // counts only, never who voted for whom
+    expect(JSON.stringify(toPublicView(v))).not.toMatch(/"votes"/);
+    // The host can skip the result screen.
+    expect(run(v, { type: "ADVANCE", by: "m" }).phase).toBe("NIGHT");
   });
 });
 
@@ -262,8 +282,9 @@ describe("Godfather", () => {
     const r = run({ ...twoMafia(), phase: "VOTING" }, ...votes(["d", "x", "c1", "c2", "c3", "m2"], "m"), { type: "VOTE", by: "m", target: "c1" });
     expect(alive(r, "m")).toBe(false);
     expect(r.godfatherId).toBe("m2");
-    expect(r.phase).toBe("NIGHT");
-    expect(run(r, act("m2", "c1")).night.mafiaTarget).toBe("c1");
+    const night = pastVerdict(r);
+    expect(night.phase).toBe("NIGHT");
+    expect(run(night, act("m2", "c1")).night.mafiaTarget).toBe("c1");
   });
 
   it("passes on when the Sniper kills the Godfather at night", () => {
@@ -372,6 +393,7 @@ describe("Sheik of Citizens", () => {
     expect(alive(r, "s")).toBe(true);
     expect(r.players.find((p) => p.id === "s")!.revealed).toBe(true);
     expect(r.announcements.at(-1)).toMatchObject({ kind: "VOTE", killedIds: [], revealedId: "s" });
+    r = pastVerdict(r);
     expect(r.phase).toBe("NIGHT");
     expect(toPlayerView(r, "c1").players.find((p) => p.id === "s")).toMatchObject({ role: "SHEIK", voteWeight: 3 });
 
@@ -398,6 +420,8 @@ describe("Sheik of Citizens", () => {
 describe("Upright Citizen", () => {
   it("when voted out, drags down a player of their choice before the night", () => {
     let r = run(specialRoom("UPRIGHT", "VOTING"), ...votes(["m", "c1", "c2", "c3", "c4"], "s"), { type: "VOTE", by: "s", target: "m" });
+    expect(toPlayerView(r, "c1").revengeBy).toBe("s"); // the result screen says a drag-down comes next
+    r = pastVerdict(r);
     expect(r.phase).toBe("REVENGE");
     expect(r.revenge).toEqual({ uprightId: "s" });
     expect(r.deadline).toBe(ctx.now + 30_000);
@@ -413,7 +437,7 @@ describe("Upright Citizen", () => {
   });
 
   it("taking nobody (timeout) moves on to the next night", () => {
-    let r = run(specialRoom("UPRIGHT", "VOTING"), ...votes(["m", "c1", "c2", "c3", "c4"], "s"), { type: "VOTE", by: "s", target: "m" });
+    let r = pastVerdict(run(specialRoom("UPRIGHT", "VOTING"), ...votes(["m", "c1", "c2", "c3", "c4"], "s"), { type: "VOTE", by: "s", target: "m" }));
     r = run(r, { type: "TIMEOUT", deadline: r.deadline! });
     expect(r.phase).toBe("NIGHT");
     expect(r.round).toBe(2);

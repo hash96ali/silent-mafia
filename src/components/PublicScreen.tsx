@@ -3,48 +3,39 @@
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useState } from "react";
 import { NIGHT_TURN_LABEL, ROLE_LABEL_AR } from "@/shared/roleText";
-import type { Announcement, Phase, PlayerView } from "@/shared/types";
+import type { Phase, PlayerView } from "@/shared/types";
 import { CrosshairIcon } from "./icons";
 import { TopBar } from "./PhaseTimer";
+import { PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, nameIn, recentAnnouncements, winnerText } from "./phases";
 import { arDigits } from "./ui";
 
 // Big-screen layout for a projector or TV. It renders the public view only
 // (the server never sends this screen a secret), so it's safe to show the room.
 
-const TITLE: Record<Phase, string> = {
-  LOBBY: "غرفة الانتظار",
-  ROLE_REVEAL: "كشف الأدوار",
-  NIGHT: "مرحلة الليل",
-  DAY: "مرحلة النهار",
-  VOTING: "مرحلة التصويت",
-  REVENGE: "انتقام المواطن الصالح",
-  GAME_OVER: "نهاية اللعبة",
-};
-
-const TAGLINE: Record<Phase, string> = {
+/** The projector addresses the whole room, so a few taglines differ from the phones'. */
+const SCREEN_TAGLINE: Partial<Record<Phase, string>> = {
   LOBBY: "امسح الرمز بهاتفك للانضمام",
   ROLE_REVEAL: "كل لاعب يطّلع على دوره بسرية على هاتفه",
   NIGHT: "المدينة نائمة... الجميع يتخذ قراره بصمت",
-  DAY: "استيقظت المدينة... ناقشوا من بينكم من المافيا",
   VOTING: "صوّتوا بسرية على هواتفكم",
-  REVENGE: "المواطن الصالح يختار من يسحبه معه",
-  GAME_OVER: "انكشفت كل الأوراق",
 };
 
 export function PublicScreen({ view, now }: { view: PlayerView; now: () => number }) {
   const night = view.phase === "NIGHT";
   const players = view.players.filter((p) => !p.isGM);
-  const recent = view.announcements.slice(view.announcements.at(-1)?.kind === "REVENGE" ? -2 : -1);
+  const recent = recentAnnouncements(view);
+  const verdict = view.phase === "VERDICT" ? view.announcements.at(-1) : undefined;
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-6 py-6 lg:px-10">
-      {night && <div className="pointer-events-none fixed inset-0 -z-10 bg-black/60" aria-hidden />}
+    <div data-phase={view.phase} className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-6 py-6 lg:px-10">
+      <PhaseBackdrop phase={view.phase} />
+      <PhaseCurtain view={view} vibrate={false} />
       <TopBar subtitle="ليلة الغموض" deadline={view.deadline} now={now} night={night || view.phase === "ROLE_REVEAL"} />
 
       <header className="text-center">
-        <h1 className="neon-text text-5xl font-black lg:text-7xl">{TITLE[view.phase]}</h1>
+        <h1 className="neon-text text-5xl font-black lg:text-7xl">{PHASE_TITLE[view.phase]}</h1>
         <p className="mt-3 text-xl text-neutral-300 lg:text-2xl">
-          {view.phase === "GAME_OVER" ? (view.winner === "MAFIA" ? "انتصرت المافيا وسيطرت على المدينة" : "انتصرت المدينة وتم القضاء على المافيا") : TAGLINE[view.phase]}
+          {view.phase === "GAME_OVER" ? winnerText(view) : (SCREEN_TAGLINE[view.phase] ?? PHASE_TAGLINE[view.phase])}
         </p>
       </header>
 
@@ -56,10 +47,20 @@ export function PublicScreen({ view, now }: { view: PlayerView; now: () => numbe
         <JoinCard code={view.code} />
       ) : (
         <>
-          {view.phase !== "ROLE_REVEAL" && recent.map((a, i) => <Banner key={i} a={a} view={view} />)}
+          {view.phase !== "ROLE_REVEAL" &&
+            recent.map((a, i) => (
+              <p key={i} className="glass neon mx-auto rounded-2xl px-8 py-5 text-center text-2xl font-bold lg:text-3xl">
+                {announcementText(a, view)}
+              </p>
+            ))}
+          {verdict && (
+            <section className="glass mx-auto w-full max-w-3xl rounded-2xl p-6">
+              <VoteTally a={verdict} view={view} big />
+            </section>
+          )}
           {view.phase === "REVENGE" && (
             <p className="glass neon mx-auto rounded-2xl px-8 py-4 text-center text-2xl font-bold">
-              {nameOf(view, view.revengeBy)} يختار الآن من سيسحبه معه…
+              {nameIn(view, view.revengeBy)} يختار الآن من سيسحبه معه…
             </p>
           )}
           {view.progress.required > 0 && view.phase !== "REVENGE" && (
@@ -135,17 +136,3 @@ function JoinCard({ code }: { code: string }) {
   );
 }
 
-function nameOf(view: PlayerView, id: string | null | undefined) {
-  return view.players.find((p) => p.id === id)?.name ?? "؟";
-}
-
-function Banner({ a, view }: { a: Announcement; view: PlayerView }) {
-  const names = (ids: string[]) => ids.map((id) => nameOf(view, id)).join(" و");
-  let text: string;
-  if (a.kind === "NIGHT") text = a.killedIds.length ? `قُتل ${names(a.killedIds)} الليلة الماضية.` : "نجا الجميع هذه الليلة.";
-  else if (a.kind === "REVENGE") text = `سحب ${names([a.byId!])} معه ${names(a.killedIds)}.`;
-  else if (a.revealedId && !a.killedIds.length) text = `انكشف ${names([a.revealedId])}: إنه شيخ المواطنين! ينجو ويصبح صوته بثلاثة أصوات.`;
-  else if (a.revealedId) text = `أُعدم ${names(a.killedIds)}، وكان ${ROLE_LABEL_AR.UPRIGHT}!`;
-  else text = a.killedIds.length ? `أعدمت المدينة ${names(a.killedIds)}.` : "لم تتفق المدينة. لم يُعدم أحد.";
-  return <p className="glass mx-auto rounded-2xl px-8 py-5 text-center text-2xl font-bold lg:text-3xl">{text}</p>;
-}

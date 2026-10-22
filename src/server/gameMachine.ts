@@ -1,4 +1,4 @@
-import { GHOST_TURN_MIN_MS, GHOST_TURN_SPREAD_MS, LIMITS, REVENGE_SEC } from "../shared/constants";
+import { GHOST_TURN_MIN_MS, GHOST_TURN_SPREAD_MS, LIMITS, REVENGE_SEC, VERDICT_SEC } from "../shared/constants";
 import { NIGHT_TURNS, SKIP, type NightTurn, type Phase, type Player, type Room, type Settings, type VoteTarget } from "../shared/types";
 import { checkWin, resolveMafiaKill, resolveSniperShot, tallyVotes, voteWeight } from "./resolve";
 import { ROLE_LABEL_AR } from "../shared/roleText";
@@ -195,6 +195,9 @@ function advance(room: Room, ctx: Ctx): void {
       return enterPhase(room, "VOTING", ctx);
     case "VOTING":
       return finishVoting(room, ctx);
+    case "VERDICT":
+      // An executed Upright Citizen gets their drag-down now that everyone has seen the result.
+      return room.revenge ? enterPhase(room, "REVENGE", ctx) : endDay(room, ctx);
     case "REVENGE":
       log(room, ctx, `لم يسحب ${getPlayer(room, room.revenge!.uprightId).name} أحداً معه.`, false);
       return endDay(room, ctx);
@@ -355,37 +358,35 @@ function finishNight(room: Room, ctx: Ctx): void {
 
 // ---------- Day vote ----------
 
+/** Applies the vote, then pauses on VERDICT so everyone sees what happened. */
 function finishVoting(room: Room, ctx: Ctx): void {
   const { executedId, tally } = tallyVotes(room.votes, (id) => voteWeight(getPlayer(room, id)));
   const voted = executedId ? getPlayer(room, executedId) : null;
+  const notVoted = alivePlayers(room).filter((p) => !(p.id in room.votes)).length;
+  const announce = (killedIds: string[], revealedId?: string) =>
+    room.announcements.push({ kind: "VOTE", round: room.round, killedIds, tally, notVoted, ...(revealedId ? { revealedId } : {}) });
 
   if (!voted) {
-    room.announcements.push({ kind: "VOTE", round: room.round, killedIds: [], tally });
+    announce([]);
     log(room, ctx, "لم تتفق المدينة؛ لم يُعدم أحد.", false);
-    return endDay(room, ctx);
-  }
-
-  // An unrevealed Sheik survives his first conviction by showing his card.
-  if (voted.role === "SHEIK" && !voted.revealed) {
+  } else if (voted.role === "SHEIK" && !voted.revealed) {
+    // An unrevealed Sheik survives his first conviction by showing his card.
     voted.revealed = true;
-    room.announcements.push({ kind: "VOTE", round: room.round, killedIds: [], revealedId: voted.id, tally });
+    announce([], voted.id);
     log(room, ctx, `انكشف ${voted.name} كشيخ المواطنين ونجا، وأصبح صوته بثلاثة أصوات.`, false);
-    return endDay(room, ctx);
-  }
-
-  voted.alive = false;
-  if (voted.role === "UPRIGHT") {
+  } else if (voted.role === "UPRIGHT") {
+    voted.alive = false;
     voted.revealed = true;
-    room.announcements.push({ kind: "VOTE", round: room.round, killedIds: [voted.id], revealedId: voted.id, tally });
+    announce([voted.id], voted.id);
     log(room, ctx, `أُعدم ${voted.name} وانكشف أنه المواطن الصالح.`, false);
     // Win is checked after the drag-down, since it can change the outcome.
     room.revenge = { uprightId: voted.id };
-    return enterPhase(room, "REVENGE", ctx);
+  } else {
+    voted.alive = false;
+    announce([voted.id]);
+    log(room, ctx, `أعدمت المدينة ${voted.name} بالتصويت.`, false);
   }
-
-  room.announcements.push({ kind: "VOTE", round: room.round, killedIds: [voted.id], tally });
-  log(room, ctx, `أعدمت المدينة ${voted.name} بالتصويت.`, false);
-  endDay(room, ctx);
+  enterPhase(room, "VERDICT", ctx);
 }
 
 /** Ends the day: game over if someone has won, otherwise the next night. */
@@ -409,7 +410,7 @@ function endIfWon(room: Room, ctx: Ctx): boolean {
 
 function enterPhase(room: Room, phase: Phase, ctx: Ctx): void {
   room.phase = phase;
-  const sec = { DAY: room.settings.daySec, VOTING: room.settings.voteSec, REVENGE: REVENGE_SEC }[phase as string] ?? 0;
+  const sec = { DAY: room.settings.daySec, VOTING: room.settings.voteSec, VERDICT: VERDICT_SEC, REVENGE: REVENGE_SEC }[phase as string] ?? 0;
   room.deadline = sec > 0 ? ctx.now + sec * 1000 : null;
   if (phase === "ROLE_REVEAL") room.revealAcks = [];
   if (phase === "VOTING") room.votes = {};

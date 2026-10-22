@@ -29,6 +29,18 @@ export function CrosshairIcon(props: IconProps) {
   );
 }
 
+/** Ballot box, for the day vote. */
+export function BallotIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden {...props}>
+      <path d="M3.5 13.5h17v7h-17z" />
+      <path d="M7.5 13.5V4.5h9v9" />
+      <path d="m9.5 9 1.8 1.8 3.5-3.6" />
+      <path d="M8 17h8" />
+    </svg>
+  );
+}
+
 export function ScreenIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden {...props}>
