@@ -169,6 +169,20 @@ export function registerSocketHandlers(io: IO): void {
     socket.on("game:start", (ack) => act(socket, ack, (by) => ({ type: "START", by })));
     socket.on("game:advance", (ack) => act(socket, ack, (by) => ({ type: "ADVANCE", by })));
     socket.on("game:playAgain", (ack) => act(socket, ack, (by) => ({ type: "PLAY_AGAIN", by })));
+    socket.on("night:done", (ack) => act(socket, ack, (by) => ({ type: "NIGHT_DONE", by })));
+
+    socket.on("game:end", (ack) => {
+      const reply = safe(ack);
+      const { code, playerId } = socket.data;
+      if (!code || !playerId) return reply({ ok: false, error: "لست في غرفة." });
+      const res = dispatch(code, { type: "END_GAME", by: playerId });
+      if (!res.ok) return reply(res);
+      // Tell every screen in the room (players, spectators, projectors) why they're back in the lobby.
+      const by = res.room.players.find((p) => p.id === playerId)?.name ?? "";
+      for (const p of res.room.players) if (p.socketId) io.to(p.socketId).emit("game:reset", { by });
+      io.to(screenChannel(res.room.code)).emit("game:reset", { by });
+      reply({ ok: true, data: undefined });
+    });
     socket.on("reveal:ack", (ack) => act(socket, ack, (by) => ({ type: "REVEAL_ACK", by })));
     socket.on("night:select", (p, ack) =>
       act(socket, ack, (by) => ({ type: "NIGHT_SELECT", by, target: typeof p?.targetId === "string" ? p.targetId : null })),

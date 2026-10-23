@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MoonIcon, SunIcon } from "./icons";
 import { arDigits } from "./ui";
 
@@ -41,6 +41,43 @@ export function TopBar({ subtitle, deadline, now, night }: { subtitle: string; d
         <PhaseTimer deadline={deadline} now={now} night={night} />
       </div>
       <div className="neon-rule" />
+    </div>
+  );
+}
+
+/**
+ * Large countdown with a draining bar, for the phase header, the night scene
+ * and the projector. Goes red and pulses in the last 10 seconds.
+ */
+export function BigTimer({ deadline, now, className = "text-5xl" }: { deadline: number | null; now: () => number; className?: string }) {
+  const [left, setLeft] = useState(() => (deadline ? deadline - now() : 0));
+  // The bar is relative to how much time there was when this deadline arrived.
+  const total = useMemo(() => (deadline ? Math.max(1000, deadline - now()) : 1), [deadline, now]);
+
+  useEffect(() => {
+    if (!deadline) return;
+    const tick = () => setLeft(Math.max(0, deadline - now()));
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [deadline, now]);
+
+  if (!deadline) return null;
+  const sec = Math.ceil(left / 1000);
+  // No leading zero on the minutes: the Arabic zero is just a dot ("٠١:٢٦" reads like "·1:26").
+  const mmss = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  const urgent = sec <= 10;
+  return (
+    <div className="flex w-full flex-col items-center gap-2" role="timer" aria-label={`المتبقي ${sec} ثانية`}>
+      <span dir="ltr" className={`font-black leading-none tabular-nums ${urgent ? "animate-pulse text-red-500 [text-shadow:0_0_18px_rgb(255_30_40/0.9)]" : "neon-text"} ${className}`}>
+        {arDigits(mmss)}
+      </span>
+      <span className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
+        <span
+          className={`block h-full rounded-full transition-[width] duration-300 ease-linear ${urgent ? "bg-red-500" : "bg-[var(--color-blood-soft)]"}`}
+          style={{ width: `${Math.min(100, (left / total) * 100)}%` }}
+        />
+      </span>
     </div>
   );
 }

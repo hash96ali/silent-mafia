@@ -16,6 +16,8 @@ export function useRoom(code: string) {
   const [view, setView] = useState<PlayerView | null>(null);
   const [connected, setConnected] = useState(true);
   const [closedReason, setClosedReason] = useState<string | null>(null);
+  /** Name of the host who just ended the game, until the notice is dismissed. */
+  const [resetBy, setResetBy] = useState<string | null>(null);
   /** serverNow - Date.now(), so countdowns agree across phones with wrong clocks. */
   const clockOffset = useRef(0);
 
@@ -48,6 +50,7 @@ export function useRoom(code: string) {
       setStatus("closed");
     };
     const onDisconnect = () => setConnected(false);
+    const onReset = ({ by }: { by: string }) => setResetBy(by || "المضيف");
     // Phones often silently drop sockets while locked; reconnect as soon as the screen is back.
     const onVisible = () => {
       if (document.visibilityState === "visible" && !socket.connected) socket.connect();
@@ -57,6 +60,7 @@ export function useRoom(code: string) {
     socket.on("room:state", onState);
     socket.on("room:closed", onClosed);
     socket.on("disconnect", onDisconnect);
+    socket.on("game:reset", onReset);
     document.addEventListener("visibilitychange", onVisible);
     if (socket.connected) resume();
 
@@ -66,11 +70,13 @@ export function useRoom(code: string) {
       socket.off("room:state", onState);
       socket.off("room:closed", onClosed);
       socket.off("disconnect", onDisconnect);
+      socket.off("game:reset", onReset);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [code]);
 
   const now = useCallback(() => Date.now() + clockOffset.current, []);
 
-  return { status, view, connected, closedReason, now };
+  const clearReset = useCallback(() => setResetBy(null), []);
+  return { status, view, connected, closedReason, now, resetBy, clearReset };
 }

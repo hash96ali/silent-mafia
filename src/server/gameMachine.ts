@@ -17,12 +17,16 @@ export type Action =
   | { type: "REVEAL_ACK"; by: string }
   | { type: "NIGHT_ACT"; by: string; target: string }
   | { type: "NIGHT_SELECT"; by: string; target: string | null }
+  /** The Detective has read their result; their turn can end. */
+  | { type: "NIGHT_DONE"; by: string }
   | { type: "VOTE"; by: string; target: VoteTarget }
   | { type: "REVENGE_PICK"; by: string; target: string }
   | { type: "ADVANCE"; by: string }
   /** `deadline` is the wake time the timer was set for, so stale timers are ignored. */
   | { type: "TIMEOUT"; deadline: number }
-  | { type: "PLAY_AGAIN"; by: string };
+  | { type: "PLAY_AGAIN"; by: string }
+  /** Host ends the game at any point and takes everyone back to the lobby. */
+  | { type: "END_GAME"; by: string };
 
 export type Result = { ok: true; room: Room } | { ok: false; error: string };
 export interface Ctx {
@@ -121,6 +125,14 @@ function apply(room: Room, a: Action, ctx: Ctx): void {
     case "NIGHT_ACT":
       requirePhase(room, "NIGHT");
       nightAct(room, a.by, a.target, ctx);
+      // The Detective's turn stays open until they've read the result (or time runs out).
+      if (room.night.turn !== "DETECTIVE") nextTurn(room, ctx);
+      return;
+
+    case "NIGHT_DONE":
+      requirePhase(room, "NIGHT");
+      requireTurnActor(room, a.by, "DETECTIVE");
+      if (!room.night.detectiveTarget) fail("اختر من تحقق معه أولاً.");
       nextTurn(room, ctx);
       return;
 
@@ -168,16 +180,48 @@ function apply(room: Room, a: Action, ctx: Ctx): void {
     case "PLAY_AGAIN":
       requireHost(room, a.by);
       requirePhase(room, "GAME_OVER");
-      for (const p of room.players) {
-        p.role = null;
-        p.alive = true;
-        p.revealed = false;
-      }
-      room.round = 0;
-      room.winner = null;
-      enterPhase(room, "LOBBY", ctx);
+      resetToLobby(room, ctx);
+      return;
+
+    case "END_GAME":
+      requireHost(room, a.by);
+      if (room.phase === "LOBBY") fail("اللعبة لم تبدأ بعد.");
+      resetToLobby(room, ctx);
       return;
   }
+}
+
+export const emptyNight = (): Room["night"] => ({
+  turn: null,
+  queue: [],
+  ghostEndsAt: null,
+  turnEndsAt: null,
+  mafiaSelection: null,
+  mafiaTarget: null,
+  doctorTarget: null,
+  detectiveTarget: null,
+  sniperTarget: null,
+});
+
+/** Clears everything about the current game but keeps every player seated. */
+function resetToLobby(room: Room, ctx: Ctx): void {
+  for (const p of room.players) {
+    p.role = null;
+    p.alive = true;
+    p.revealed = false;
+  }
+  room.round = 0;
+  room.winner = null;
+  room.godfatherId = null;
+  room.revenge = null;
+  room.sniperShotUsed = false;
+  room.investigations = {};
+  room.votes = {};
+  room.revealAcks = [];
+  room.announcements = [];
+  room.log = [];
+  room.night = emptyNight();
+  enterPhase(room, "LOBBY", ctx);
 }
 
 function advance(room: Room, ctx: Ctx): void {
@@ -235,17 +279,7 @@ function startNight(room: Room, ctx: Ctx): void {
   // One countdown for the whole night, shown to everyone; turns share it.
   const sec = room.settings.nightSec;
   room.deadline = sec > 0 ? ctx.now + sec * 1000 : null;
-  room.night = {
-    turn: null,
-    queue: nightTurns(room.settings),
-    ghostEndsAt: null,
-    turnEndsAt: null,
-    mafiaSelection: null,
-    mafiaTarget: null,
-    doctorTarget: null,
-    detectiveTarget: null,
-    sniperTarget: null,
-  };
+  room.night = { ...emptyNight(), queue: nightTurns(room.settings) };
   nextTurn(room, ctx);
 }
 

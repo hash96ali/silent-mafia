@@ -201,7 +201,7 @@ describe("sequential night turns", () => {
     expect(r.night.turn).toBe("DOCTOR");
     r = run(r, act("d", "c2"));
     expect(r.night.turn).toBe("DETECTIVE");
-    r = run(r, act("x", "m"));
+    r = run(r, act("x", "m"), { type: "NIGHT_DONE", by: "x" });
 
     expect(r.phase).toBe("MORNING");
     expect(alive(r, "c1")).toBe(false);
@@ -244,7 +244,7 @@ describe("sequential night turns", () => {
     expect(toPublicView(r).stage).toBe("NIGHT_DOCTOR_TURN");
     r = run(r, act("d", "c2"));
     expect(toPlayerView(r, "x").stage).toBe("NIGHT_SPECIAL_TURN");
-    r = run(r, act("x", "m"));
+    r = run(r, act("x", "m"), { type: "NIGHT_DONE", by: "x" });
     expect(toPlayerView(r, "c2").stage).toBe("DAY_ANNOUNCEMENT");
     r = run(r, { type: "TIMEOUT", deadline: wakeAt(r)! });
     expect(r.phase).toBe("DAY");
@@ -269,6 +269,44 @@ describe("sequential night turns", () => {
   it("only the roles the host enabled get a turn", () => {
     expect(atNight(specialRoom("SHEIK")).night.queue).toEqual([]); // Sheik has no night action
     expect(atNight(specialRoom("SNIPER")).night.queue).toEqual(["SNIPER"]);
+  });
+});
+
+describe("Detective result", () => {
+  it("the turn waits on the result screen until the Detective acknowledges", () => {
+    let r = run(nightRoom(), act("m", "c1"), act("d", "c2"), act("x", "m"));
+    expect(r.phase).toBe("NIGHT");
+    expect(r.night.turn).toBe("DETECTIVE");
+    expect(toPlayerView(r, "x").investigations).toEqual([{ round: 1, targetId: "m", isMafia: true }]);
+    expect(reduce(r, act("x", "c1"), ctx).ok).toBe(false); // one investigation per night
+    expect(reduce(r, { type: "NIGHT_DONE", by: "c1" }, ctx).ok).toBe(false);
+    r = run(r, { type: "NIGHT_DONE", by: "x" });
+    expect(r.phase).toBe("MORNING");
+  });
+
+  it("can't skip the turn without investigating, but the turn's time still runs out", () => {
+    const r = run(nightRoom(), act("m", "c1"), act("d", "c2"));
+    expect(reduce(r, { type: "NIGHT_DONE", by: "x" }, ctx).ok).toBe(false);
+    expect(run(r, act("x", "m"), { type: "TIMEOUT", deadline: wakeAt(run(r, act("x", "m")))! }).phase).toBe("MORNING");
+  });
+});
+
+describe("End game", () => {
+  it("the host can end mid-game: everyone back in the lobby, still seated, all game state cleared", () => {
+    const mid = run(nightRoom(), act("m", "c1"), act("d", "c2"), act("x", "m"), { type: "NIGHT_DONE", by: "x" });
+    expect(alive(mid, "c1")).toBe(false);
+    const r = run(mid, { type: "END_GAME", by: "m" }); // m is the host
+    expect(r.phase).toBe("LOBBY");
+    expect(r.players.map((p) => p.id)).toEqual(["m", "d", "x", "c1", "c2"]);
+    expect(r.players.every((p) => p.alive && p.role === null && !p.revealed)).toBe(true);
+    expect(r).toMatchObject({ round: 0, deadline: null, godfatherId: null, winner: null, revenge: null, sniperShotUsed: false, votes: {}, investigations: {}, announcements: [], log: [] });
+    expect(r.night.turn).toBeNull();
+    expect(toPlayerView(r, "c1").players.filter((p) => p.role)).toHaveLength(0);
+  });
+
+  it("only the host can end, and only once a game has started", () => {
+    expect(reduce(nightRoom(), { type: "END_GAME", by: "c1" }, ctx).ok).toBe(false);
+    expect(reduce(classicRoom(), { type: "END_GAME", by: "m" }, ctx).ok).toBe(false);
   });
 });
 
@@ -529,7 +567,7 @@ describe("haptics", () => {
   });
 
   it("everyone alive gets an alert for the morning and for voting", () => {
-    const r = run(twoMafia(), act("m", "c1"), act("d", "c2"), act("x", "m"));
+    const r = run(twoMafia(), act("m", "c1"), act("d", "c2"), act("x", "m"), { type: "NIGHT_DONE", by: "x" });
     expect(r.phase).toBe("MORNING");
     expect(feel(r, "c2")).toEqual(HAPTIC.ALERT);
     expect(feel(r, "c1")).toBeNull(); // died tonight

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { NIGHT_TURN_LABEL, ROLE_LABEL_AR } from "@/shared/roleText";
 import type { Phase, PlayerView } from "@/shared/types";
 import { CrosshairIcon } from "./icons";
-import { TopBar } from "./PhaseTimer";
+import { BigTimer, TopBar } from "./PhaseTimer";
 import { PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, nameIn, recentAnnouncements, winnerText } from "./phases";
 import { arDigits } from "./ui";
 
@@ -37,6 +37,9 @@ export function PublicScreen({ view, now }: { view: PlayerView; now: () => numbe
         <p className="mt-3 text-xl text-neutral-300 lg:text-2xl">
           {view.phase === "GAME_OVER" ? winnerText(view) : (SCREEN_TAGLINE[view.phase] ?? PHASE_TAGLINE[view.phase])}
         </p>
+        <div className="mt-6">
+          <BigTimer deadline={view.deadline} now={now} className="text-8xl lg:text-9xl" />
+        </div>
       </header>
 
       {view.nightTurn && (

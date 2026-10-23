@@ -32,6 +32,12 @@ The night runs one role at a time: **Mafia → Doctor → Detective → Sniper**
 - **Godfather (كبير المافيا):** one Mafia member, chosen at random when roles are dealt, makes the kill. The other Mafia see his highlighted pick live but can't choose. If the Godfather dies (vote, Sniper, drag-down), a random living Mafia member takes over immediately. If his turn times out, his highlighted pick still counts.
 - **Dead or spent roles still get a turn.** It shows the same countdown and ends by itself after a random 6–14s, so nobody can tell that role is gone.
 
+## Night screen, Detective result, End Game
+
+- At night every phone turns into a full-screen night sky with a large countdown and whose turn it is. A player's menu appears, openly, only when their own turn comes.
+- The Detective's result fills their screen: red **مافيا (Mafia)** or calm **سليم (Innocent / Safe)**. Their turn ends when they tap **فهمت** (or after 10s, or when the turn's time runs out).
+- The host has **إنهاء اللعبة** during play. After a confirmation, the server resets roles, votes, deaths and night state, returns everyone (players, spectators, projector) to the lobby with their seats kept, and every phone shows who ended it and vibrates.
+
 ## Vibration
 
 Room setting **الاهتزاز**: *حسب الدور* (default: Godfather `[400,120,400]`, other Mafia `[200,100,200]`, Doctor `[300]`, Detective/Sniper `[100,60,100,60,100]`, everyone alive `[120,60,120]` at the morning announcement and when voting opens), *للجميع* (every living phone buzzes the same on every turn, so a buzz reveals nothing), or *صامت*. Uses `navigator.vibrate` via `triggerHaptic()` in `src/client/haptics.ts`; it fails quietly where unsupported (iPhone) and shows a "tap to enable" hint until the browser allows vibration.

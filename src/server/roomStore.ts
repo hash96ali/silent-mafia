@@ -1,7 +1,7 @@
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { CODE_ALPHABET, CODE_LENGTH, DEFAULT_SETTINGS, LIMITS } from "../shared/constants";
 import type { Player, Room, Settings } from "../shared/types";
-import { sanitizeSettings } from "./gameMachine";
+import { emptyNight, sanitizeSettings } from "./gameMachine";
 
 // In-memory authoritative store. A restart drops all games; swap this module
 // for Redis/Postgres if rooms need to outlive the process.
@@ -56,7 +56,7 @@ export function createRoom(hostName: string, asGM: boolean, settings: Partial<Se
     players: [host],
     hostId: host.id,
     deadline: null,
-    night: { turn: null, queue: [], ghostEndsAt: null, turnEndsAt: null, mafiaSelection: null, mafiaTarget: null, doctorTarget: null, detectiveTarget: null, sniperTarget: null },
+    night: emptyNight(),
     votes: {},
     revealAcks: [],
     investigations: {},

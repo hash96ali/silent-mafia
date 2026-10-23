@@ -241,6 +241,10 @@ export interface ClientToServerEvents {
   "game:playAgain": (ack: Ack) => void;
   "reveal:ack": (ack: Ack) => void;
   "night:act": (p: { targetId: string }, ack: Ack<{ investigation?: Investigation }>) => void;
+  /** Detective only: done reading tonight's result, end the turn. */
+  "night:done": (ack: Ack) => void;
+  /** Host only: end the game now and return everyone to the lobby. */
+  "game:end": (ack: Ack) => void;
   /** Godfather only: highlight a target for the rest of the Mafia before confirming. */
   "night:select": (p: { targetId: string | null }, ack: Ack) => void;
   "vote:cast": (p: { targetId: VoteTarget }, ack: Ack) => void;
@@ -253,6 +257,8 @@ export interface ServerToClientEvents {
   "room:state": (view: PlayerView) => void;
   /** Sent when this session can no longer be used (kicked, replaced, room closed). */
   "room:closed": (p: { reason: string }) => void;
+  /** The host ended the game; the next room:state is the lobby. */
+  "game:reset": (p: { by: string }) => void;
 }
 
 export interface SocketData {
