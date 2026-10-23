@@ -36,6 +36,7 @@ The night runs one role at a time: **Mafia → Doctor → Detective → Sniper**
 
 - At night every phone turns into a full-screen night sky with a large countdown and whose turn it is. A player's menu appears, openly, only when their own turn comes.
 - The Detective's result fills their screen: red **مافيا (Mafia)** or calm **سليم (Innocent / Safe)**. Their turn ends when they tap **فهمت** (or after 10s, or when the turn's time runs out).
+- The storyteller (الراوي) device shows only the current phase, whose turn it is at night, and a large countdown (plus the host buttons if they host); the full results appear at game over.
 - The host has **إنهاء اللعبة** during play. After a confirmation, the server resets roles, votes, deaths and night state, returns everyone (players, spectators, projector) to the lobby with their seats kept, and every phone shows who ended it and vibrates.
 
 ## Vibration

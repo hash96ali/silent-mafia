@@ -10,8 +10,7 @@ import { PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, ann
 import { BigTimer, TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
 import { RoleCard } from "./RoleCard";
-import { SecretPanel } from "./SecretPanel";
-import { NIGHT_TURN_LABEL, ROLE_LABEL_AR } from "@/shared/roleText";
+import { NIGHT_TURN_LABEL } from "@/shared/roleText";
 import { Button, ErrorText, Panel, arDigits } from "./ui";
 
 type Run = (event: Parameters<typeof call>[0], ...args: unknown[]) => Promise<boolean>;
@@ -38,6 +37,28 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
   const hostControls = (
     <HostControls canAdvance={canAdvance} canEnd={canEnd} onAdvance={() => run("game:advance")} onEnd={() => setConfirmEnd(true)} />
   );
+  const endDialog = confirmEnd && (
+    <ConfirmDialog
+      text="هل أنت متأكد من إنهاء الجولة وإعادة الجميع إلى غرفة الانتظار؟"
+      confirmLabel="نعم، أنهِ اللعبة"
+      onCancel={() => setConfirmEnd(false)}
+      onConfirm={async () => {
+        setConfirmEnd(false);
+        await run("game:end");
+      }}
+    />
+  );
+
+  // The storyteller's device shows only the phase and the clock (results screen at the end).
+  if (me.isGM && view.phase !== "GAME_OVER") {
+    return (
+      <>
+        <PhaseCurtain view={view} />
+        <NarratorScreen view={view} now={now} error={error} hostControls={hostControls} />
+        {endDialog}
+      </>
+    );
+  }
 
   return (
     <div data-phase={view.phase} className="flex flex-col gap-4">
@@ -94,17 +115,31 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
       {night && !me.isGM && <NightScene view={view} me={me} now={now} run={run} error={error} hostControls={hostControls} />}
       <DetectiveResult view={view} />
       {myRevenge && <RevengePicker view={view} run={run} />}
-      {confirmEnd && (
-        <ConfirmDialog
-          text="هل أنت متأكد من إنهاء الجولة وإعادة الجميع إلى غرفة الانتظار؟"
-          confirmLabel="نعم، أنهِ اللعبة"
-          onCancel={() => setConfirmEnd(false)}
-          onConfirm={async () => {
-            setConfirmEnd(false);
-            await run("game:end");
-          }}
-        />
-      )}
+      {endDialog}
+    </div>
+  );
+}
+
+/**
+ * Storyteller (الراوي) screen: just the current phase, whose turn it is at
+ * night, and a large countdown. Host buttons stay at the bottom if the
+ * storyteller is also the host.
+ */
+function NarratorScreen({ view, now, error, hostControls }: { view: PlayerView; now: () => number; error: string | null; hostControls: ReactNode }) {
+  const night = view.phase === "NIGHT";
+  return (
+    <div data-phase={view.phase} className={`fixed inset-0 z-30 overflow-y-auto ${night ? "night-scene" : ""}`}>
+      {!night && <PhaseBackdrop phase={view.phase} />}
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col px-4 pt-6 pb-6">
+        <p className="text-center text-xs tracking-widest text-neutral-500">الراوي · Storyteller</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
+          <h1 className="neon-text text-5xl font-black">{PHASE_TITLE[view.phase]}</h1>
+          {view.nightTurn && <p className="text-2xl font-bold text-white">الآن {NIGHT_TURN_LABEL[view.nightTurn]}</p>}
+          <BigTimer deadline={view.deadline} now={now} className="text-8xl" />
+        </div>
+        <ErrorText>{error}</ErrorText>
+        {hostControls}
+      </div>
     </div>
   );
 }
@@ -198,15 +233,6 @@ function StageBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
           <VoteTally a={last} view={view} />
         </Panel>
       );
-  }
-
-  // The GM's dashboard lists every role, so it stays behind the cover.
-  if (me.isGM) {
-    return (
-      <SecretPanel resetKey={`${view.stage}-${view.round}-${view.nightTurn ?? ""}`}>
-        <GmPanel view={view} nameOf={nameOf} />
-      </SecretPanel>
-    );
   }
 
   if (view.stage === "REVENGE" && view.revengeBy !== me.id) {
@@ -556,69 +582,6 @@ function RevengePicker({ view, run }: { view: PlayerView; run: Run }) {
         <TargetPicker candidates={alive} current={null} confirmLabel={() => "اسحبه معي"} onConfirm={(id) => run("revenge:pick", { targetId: id })} />
       </div>
     </div>
-  );
-}
-
-function GmPanel({ view, nameOf }: { view: PlayerView; nameOf: (id: string | null | undefined) => string }) {
-  const gm = view.gm;
-  if (!gm) return null;
-  const rows: [string, ReactNode][] =
-    view.phase === "NIGHT"
-      ? [
-          ["الدور الحالي", gm.night.turn ? `${NIGHT_TURN_LABEL[gm.night.turn]}${gm.night.ghostEndsAt ? " (شكلي: صاحب الدور لا يستطيع اللعب)" : ""}` : "—"],
-          ["كبير المافيا", nameOf(view.godfatherId)],
-          [ROLE_LABEL_AR.MAFIA, gm.night.mafiaTarget ? `${nameOf(gm.night.mafiaTarget)} ✓` : gm.night.mafiaSelection ? `${nameOf(gm.night.mafiaSelection)} (يفكر)` : "—"],
-          [ROLE_LABEL_AR.DOCTOR, nameOf(gm.night.doctorTarget)],
-          [ROLE_LABEL_AR.DETECTIVE, nameOf(gm.night.detectiveTarget)],
-          [ROLE_LABEL_AR.SNIPER, gm.night.sniperTarget === SKIP ? "أمسك النار" : nameOf(gm.night.sniperTarget)],
-        ]
-      : view.phase === "VOTING"
-        ? Object.entries(gm.votes).map(([v, t]) => [nameOf(v), t === SKIP ? "امتناع" : nameOf(t)])
-        : [];
-  const players = view.players.filter((p) => !p.isGM);
-  return (
-    <>
-      <Panel
-        title="لوحة الراوي"
-        eyebrow="Game Master · live"
-        subtitle={view.progress.required ? `${view.phase === "NIGHT" ? "أدوار منتهية" : "جاهز"} ${arDigits(view.progress.done)} من ${arDigits(view.progress.required)}` : undefined}
-      >
-        {rows.length ? (
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-            {rows.map(([k, v]) => (
-              <div key={k} className="contents">
-                <dt className="text-neutral-500">{k}</dt>
-                <dd>{v}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : (
-          <p className="text-sm text-neutral-400">اروِ أحداث {PHASE_TITLE[view.phase]}.</p>
-        )}
-      </Panel>
-      <Panel title="الأدوار السرية" eyebrow="All roles">
-        <ul className="grid grid-cols-2 gap-1.5 text-sm">
-          {players.map((p) => (
-            <li key={p.id} className={`flex justify-between gap-2 rounded-lg bg-black/40 px-2.5 py-1.5 ${p.alive ? "" : "opacity-45 line-through"}`}>
-              <span className="truncate">{p.name}</span>
-              <span className={p.role === "MAFIA" ? "text-ember" : "text-neutral-400"}>{p.role ? ROLE_LABEL_AR[p.role] : "—"}</span>
-            </li>
-          ))}
-        </ul>
-      </Panel>
-      {view.log.length > 0 && (
-        <Panel title="السجل الكامل" eyebrow="Full log">
-          <ol className="flex max-h-64 flex-col gap-1.5 overflow-y-auto text-sm">
-            {view.log.map((e, i) => (
-              <li key={i} className={e.secret ? "text-neutral-500" : "text-neutral-200"}>
-                <span className="text-ember/70">ج{arDigits(e.round)}: </span>
-                {e.text}
-              </li>
-            ))}
-          </ol>
-        </Panel>
-      )}
-    </>
   );
 }
 
