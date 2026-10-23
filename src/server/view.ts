@@ -70,6 +70,7 @@ export function toPlayerView(room: Room, viewerId: string | null, now = Date.now
     myVote: viewer && room.phase === "VOTING" ? (room.votes[viewer.id] ?? null) : null,
     hasAckedReveal: !!viewer && room.revealAcks.includes(viewer.id),
     stage: stageOf(room.phase, night ? room.night.turn : null),
+    nightEndsBy: night && room.deadline ? room.deadline + room.night.queue.length * room.settings.nightSec * 1000 : null,
     nightTurn: night ? room.night.turn : null,
     ...(seesGodfather && room.godfatherId ? { godfatherId: room.godfatherId } : {}),
     ...(isMafia && night && room.night.turn === "MAFIA" ? { mafiaSelection: room.night.mafiaSelection } : {}),

@@ -113,7 +113,7 @@ function ShareCode({ code }: { code: string }) {
   );
 }
 
-const TIMER_OPTIONS = [0, 30, 45, 60, 90, 120, 180, 300, 600];
+const TIMER_OPTIONS = [0, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600];
 const fmt = (s: number) => (s === 0 ? "بلا مؤقت" : s < 60 ? `${arDigits(s)} ثانية` : `${arDigits(s / 60)} دقيقة`);
 
 function SettingsForm({ settings, editable, onChange }: { settings: Settings; editable: boolean; onChange: (p: Partial<Settings>) => void }) {
@@ -125,7 +125,7 @@ function SettingsForm({ settings, editable, onChange }: { settings: Settings; ed
     { key: "upright", role: "UPRIGHT" },
   ];
   const timers: [keyof Settings, string][] = [
-    ["nightSec", "مؤقت الليل (لكل الأدوار)"],
+    ["nightSec", "مؤقت كل دور ليلي"],
     ["daySec", "مؤقت النقاش"],
     ["voteSec", "مؤقت التصويت"],
   ];

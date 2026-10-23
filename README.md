@@ -27,7 +27,7 @@ Host toggles each role in the lobby. Mafia, Citizen and (optionally) Doctor / De
 
 ## Night order
 
-The night runs one role at a time: **Mafia → Doctor → Detective → Sniper** (only roles the host enabled). One night countdown is shown to everyone; each turn gets an equal share of the time left, so a quick turn leaves more for the next. Every screen switches with the server's stage (`NIGHT_MAFIA_TURN`, `NIGHT_DOCTOR_TURN`, `NIGHT_SPECIAL_TURN`, `DAY_ANNOUNCEMENT`, `DISCUSSION`, `VOTING`, ...), and the projector shows whose turn it is.
+The night runs one role at a time: **Mafia → Doctor → Detective → Sniper** (only roles the host enabled). Each role gets its own full turn timer (lobby: "مؤقت كل دور ليلي", default 30s), so a slow turn never takes time from the roles after it; under the turn timer everyone also sees the latest the whole night can end. Every screen switches with the server's stage (`NIGHT_MAFIA_TURN`, `NIGHT_DOCTOR_TURN`, `NIGHT_SPECIAL_TURN`, `DAY_ANNOUNCEMENT`, `DISCUSSION`, `VOTING`, ...), and the projector shows whose turn it is.
 
 - **Godfather (كبير المافيا):** one Mafia member, chosen at random when roles are dealt, makes the kill. The other Mafia see his highlighted pick live but can't choose. If the Godfather dies (vote, Sniper, drag-down), a random living Mafia member takes over immediately. If his turn times out, his highlighted pick still counts.
 - **Dead or spent roles still get a turn.** It shows the same countdown and ends by itself after a random 6–14s, so nobody can tell that role is gone.

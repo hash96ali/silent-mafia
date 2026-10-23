@@ -7,7 +7,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sheik: false,
   sniper: false,
   upright: false,
-  nightSec: 90,
+  nightSec: 30,
   daySec: 180,
   voteSec: 60,
   revealRoleOnDeath: true,

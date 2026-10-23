@@ -64,8 +64,9 @@ export function BigTimer({ deadline, now, className = "text-5xl" }: { deadline: 
 
   if (!deadline) return null;
   const sec = Math.ceil(left / 1000);
-  // No leading zero on the minutes: the Arabic zero is just a dot ("٠١:٢٦" reads like "·1:26").
-  const mmss = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  // No leading zero: the Arabic zero is just a dot ("٠:٢٣" reads like "·:23"), so under a
+  // minute show only the seconds, and above it drop the zero-padding on minutes.
+  const mmss = sec < 60 ? String(sec) : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
   const urgent = sec <= 10;
   return (
     <div className="flex w-full flex-col items-center gap-2" role="timer" aria-label={`المتبقي ${sec} ثانية`}>
@@ -79,5 +80,24 @@ export function BigTimer({ deadline, now, className = "text-5xl" }: { deadline: 
         />
       </span>
     </div>
+  );
+}
+
+/** Small line under the turn timer: the most the night can still last (every remaining turn at full time). */
+export function NightEndsBy({ at, now, className = "text-sm" }: { at: number | null; now: () => number; className?: string }) {
+  const [left, setLeft] = useState(() => (at ? at - now() : 0));
+  useEffect(() => {
+    if (!at) return;
+    const tick = () => setLeft(Math.max(0, at - now()));
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [at, now]);
+  if (!at) return null;
+  const sec = Math.ceil(left / 1000);
+  return (
+    <p className={`text-neutral-400 ${className}`}>
+      الليل كله ينتهي خلال <span dir="ltr" className="font-bold tabular-nums text-neutral-200">{arDigits(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`)}</span> كحد أقصى
+    </p>
   );
 }

@@ -7,7 +7,7 @@ import { SKIP, type Announcement, type PlayerView, type PublicPlayer } from "@/s
 import { BallotIcon, CrosshairIcon, MoonIcon, SunIcon } from "./icons";
 import { LeaveButton } from "./Lobby";
 import { PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, recentAnnouncements, winnerText } from "./phases";
-import { BigTimer, TopBar } from "./PhaseTimer";
+import { BigTimer, NightEndsBy, TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
 import { RoleCard } from "./RoleCard";
 import { NIGHT_TURN_LABEL } from "@/shared/roleText";
@@ -136,6 +136,7 @@ function NarratorScreen({ view, now, error, hostControls }: { view: PlayerView; 
           <h1 className="neon-text text-5xl font-black">{PHASE_TITLE[view.phase]}</h1>
           {view.nightTurn && <p className="text-2xl font-bold text-white">الآن {NIGHT_TURN_LABEL[view.nightTurn]}</p>}
           <BigTimer deadline={view.deadline} now={now} className="text-8xl" />
+          <NightEndsBy at={view.nightEndsBy} now={now} />
         </div>
         <ErrorText>{error}</ErrorText>
         {hostControls}
@@ -306,8 +307,9 @@ function NightScene({
       <div className="mx-auto flex min-h-full w-full max-w-md flex-col gap-5 px-4 pt-6 pb-6">
         <div className="flex flex-col items-center gap-3 text-center">
           <MoonIcon className="size-10 text-neutral-200 drop-shadow-[0_0_14px_rgb(255_255_255/0.4)]" />
-          <BigTimer deadline={view.deadline} now={now} className={myTurn ? "text-6xl" : "text-8xl"} />
           {turn && <p className="text-xl font-bold text-white">الآن {NIGHT_TURN_LABEL[turn]}</p>}
+          <BigTimer deadline={view.deadline} now={now} className={myTurn ? "text-6xl" : "text-8xl"} />
+          <NightEndsBy at={view.nightEndsBy} now={now} />
         </div>
 
         {myTurn ? (

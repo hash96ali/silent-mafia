@@ -51,7 +51,7 @@ export interface Settings {
   sheik: boolean;
   sniper: boolean;
   upright: boolean;
-  /** Durations in seconds; 0 disables the timer. `nightSec` is the whole night, shared by its turns. */
+  /** Durations in seconds; 0 disables the timer. `nightSec` is per night turn: each role gets its own. */
   nightSec: number;
   daySec: number;
   voteSec: number;
@@ -90,8 +90,6 @@ export interface NightState {
    * deadline, so it looks like any other turn. Server/GM only.
    */
   ghostEndsAt: number | null;
-  /** When the current turn's share of the night runs out (server only; the night has one visible deadline). */
-  turnEndsAt: number | null;
   /** The Godfather's highlighted pick, shown live to the other Mafia. */
   mafiaSelection: string | null;
   /** The Godfather's confirmed kill. */
@@ -198,6 +196,8 @@ export interface PlayerView {
   hasAckedReveal: boolean;
   /** The screen to show; see `stageOf`. */
   stage: Stage;
+  /** At night: the latest the night can end if every remaining turn uses its full time. */
+  nightEndsBy: number | null;
   /** Whose night turn it is (public, like a narrator calling roles); null outside NIGHT. */
   nightTurn: NightTurn | null;
   /** Mafia, GM and game over only. */

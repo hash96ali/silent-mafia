@@ -9,7 +9,7 @@ import { toPlayerView, toPublicView } from "../src/server/view";
 import { HAPTIC, hapticFor } from "../src/client/haptics";
 
 const ctx = { now: 1_000, rng: () => 0 };
-const NIGHT_MS = DEFAULT_SETTINGS.nightSec * 1000;
+const TURN_MS = DEFAULT_SETTINGS.nightSec * 1000;
 
 function player(id: string, extra: Partial<Player> = {}): Player {
   return { id, name: id, token: `t-${id}`, socketId: null, connected: true, disconnectedAt: null, isGM: false, role: null, alive: true, revealed: false, ...extra };
@@ -19,7 +19,6 @@ const emptyNight = (): Room["night"] => ({
   turn: null,
   queue: [],
   ghostEndsAt: null,
-  turnEndsAt: null,
   mafiaSelection: null,
   mafiaTarget: null,
   doctorTarget: null,
@@ -162,7 +161,7 @@ describe("state machine", () => {
     const next = run(r, { type: "START", by: "h" }, ...["h", "a", "b", "c"].map((by) => ({ type: "REVEAL_ACK", by }) as Action));
     expect(next.phase).toBe("NIGHT");
     expect(next.night.turn).toBe("MAFIA");
-    expect(next.deadline).toBe(ctx.now + NIGHT_MS); // one countdown for the whole night
+    expect(next.deadline).toBe(ctx.now + TURN_MS); // the Mafia turn's own timer
   });
 
   it("voting out the last Mafia ends the game for the town", () => {
@@ -219,22 +218,28 @@ describe("sequential night turns", () => {
     expect(reduce(doctorTurn, act("m", "c2"), ctx).ok).toBe(false); // Mafia's turn is over
   });
 
-  it("one night timer; each turn gets an equal share of what's left", () => {
-    const r = nightRoom(); // 3 turns
-    expect(r.deadline).toBe(ctx.now + NIGHT_MS);
-    expect(wakeAt(r)).toBe(ctx.now + NIGHT_MS / 3);
+  it("every role gets its own full turn timer", () => {
+    const r = nightRoom(); // Mafia, Doctor, Detective
+    expect(r.deadline).toBe(ctx.now + TURN_MS);
+    expect(wakeAt(r)).toBe(ctx.now + TURN_MS);
     expect(reduce(r, { type: "TIMEOUT", deadline: 4_000 }, ctx).ok).toBe(false);
-    const next = run(r, { type: "TIMEOUT", deadline: wakeAt(r)! });
-    expect(next.phase).toBe("NIGHT");
+
+    // The Mafia uses its whole turn; the Doctor still gets a full turn of its own.
+    const late = { now: ctx.now + TURN_MS, rng: ctx.rng };
+    const res = reduce(r, { type: "TIMEOUT", deadline: wakeAt(r)! }, late);
+    expect(res.ok).toBe(true);
+    const next = (res as { room: Room }).room;
     expect(next.night.turn).toBe("DOCTOR");
     expect(next.night.mafiaTarget).toBeNull();
-    expect(next.deadline).toBe(r.deadline); // the night's countdown doesn't restart
+    expect(next.deadline).toBe(late.now + TURN_MS);
   });
 
-  it("time a quick turn doesn't use goes to the turns after it", () => {
-    const r = run(nightRoom(), act("m", "c1")); // Mafia acted instantly
-    expect(r.night.turn).toBe("DOCTOR");
-    expect(wakeAt(r)).toBe(ctx.now + NIGHT_MS / 2); // 2 turns share the whole night
+  it("everyone is told the latest the night can end", () => {
+    const r = nightRoom();
+    expect(toPlayerView(r, "c1").nightEndsBy).toBe(ctx.now + 3 * TURN_MS);
+    const doctorTurn = run(r, act("m", "c1")); // Mafia decided instantly
+    expect(toPublicView(doctorTurn).nightEndsBy).toBe(ctx.now + 2 * TURN_MS);
+    expect(toPlayerView({ ...r, phase: "DAY" }, "c1").nightEndsBy).toBeNull();
   });
 
   it("the stage tells every screen which night turn to show", () => {
@@ -256,9 +261,9 @@ describe("sequential night turns", () => {
     base.players.find((p) => p.id === "d")!.alive = false;
     let r = run(atNight(base), act("m", "c1"));
     expect(r.night.turn).toBe("DOCTOR");
-    expect(r.deadline).toBe(ctx.now + NIGHT_MS); // same night countdown as always
+    expect(r.deadline).toBe(ctx.now + TURN_MS); // same turn countdown as a live role
     expect(r.night.ghostEndsAt).toBeGreaterThan(ctx.now);
-    expect(r.night.ghostEndsAt).toBeLessThanOrEqual(r.night.turnEndsAt!);
+    expect(r.night.ghostEndsAt).toBeLessThanOrEqual(r.deadline!);
     expect(toPublicView(r)).not.toHaveProperty("night");
     expect(JSON.stringify(toPlayerView(r, "c1"))).not.toContain("ghost");
 

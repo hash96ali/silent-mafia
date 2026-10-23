@@ -195,7 +195,6 @@ export const emptyNight = (): Room["night"] => ({
   turn: null,
   queue: [],
   ghostEndsAt: null,
-  turnEndsAt: null,
   mafiaSelection: null,
   mafiaTarget: null,
   doctorTarget: null,
@@ -270,15 +269,12 @@ export function turnActor(room: Room, turn: NightTurn): Player | null {
 
 /** When the current phase or night turn should end by itself. */
 export function wakeAt(room: Room): number | null {
-  if (room.phase === "NIGHT") return room.night.ghostEndsAt ?? room.night.turnEndsAt ?? room.deadline;
+  if (room.phase === "NIGHT") return room.night.ghostEndsAt ?? room.deadline;
   return room.deadline;
 }
 
 function startNight(room: Room, ctx: Ctx): void {
   ensureGodfather(room, ctx);
-  // One countdown for the whole night, shown to everyone; turns share it.
-  const sec = room.settings.nightSec;
-  room.deadline = sec > 0 ? ctx.now + sec * 1000 : null;
   room.night = { ...emptyNight(), queue: nightTurns(room.settings) };
   nextTurn(room, ctx);
 }
@@ -288,20 +284,17 @@ function nextTurn(room: Room, ctx: Ctx): void {
   const turn = room.night.queue.shift();
   room.night.turn = turn ?? null;
   room.night.ghostEndsAt = null;
-  room.night.turnEndsAt = null;
   if (!turn) return finishNight(room, ctx);
 
-  // Each turn gets an equal share of the night that's left, so time a quick
-  // player doesn't use carries over to the turns after them.
-  if (room.deadline) {
-    const turnsLeft = room.night.queue.length + 1;
-    room.night.turnEndsAt = ctx.now + Math.floor((room.deadline - ctx.now) / turnsLeft);
-  }
+  // Every role gets its own full turn timer, so a slow turn never eats into
+  // the time of the roles after it.
+  const sec = room.settings.nightSec;
+  room.deadline = sec > 0 ? ctx.now + sec * 1000 : null;
   // A role that can't act ends its turn early at a random moment, just like
   // a player who decides quickly, so nobody can tell that role is gone.
   if (!turnActor(room, turn)) {
     const end = ctx.now + GHOST_TURN_MIN_MS + Math.round(ctx.rng() * GHOST_TURN_SPREAD_MS);
-    room.night.ghostEndsAt = room.night.turnEndsAt ? Math.min(end, room.night.turnEndsAt) : end;
+    room.night.ghostEndsAt = room.deadline ? Math.min(end, room.deadline) : end;
   }
 }
 
