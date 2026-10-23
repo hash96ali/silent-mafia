@@ -12,10 +12,7 @@ import { ROLE_BLURB, roleTitle } from "@/shared/roleText";
  */
 export function RoleCard({ role, teammates, godfather = false, large = false }: { role: Role; teammates?: string[]; godfather?: boolean; large?: boolean }) {
   const [held, setHeld] = useState(false);
-  const show = () => {
-    setHeld(true);
-    navigator.vibrate?.(30);
-  };
+  const show = () => setHeld(true);
   const hide = () => setHeld(false);
   const mafia = role === "MAFIA";
 

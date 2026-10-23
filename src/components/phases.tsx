@@ -12,7 +12,8 @@ export const PHASE_TITLE: Record<Phase, string> = {
   LOBBY: "غرفة الانتظار",
   ROLE_REVEAL: "كشف الأدوار",
   NIGHT: "مرحلة الليل",
-  DAY: "مرحلة النهار",
+  MORNING: "إعلان الصباح",
+  DAY: "مرحلة النقاش",
   VOTING: "مرحلة التصويت",
   VERDICT: "نتيجة التصويت",
   REVENGE: "انتقام المواطن الصالح",
@@ -23,7 +24,8 @@ export const PHASE_TAGLINE: Record<Phase, string> = {
   LOBBY: "اجمع اللاعبين... الليل يقترب",
   ROLE_REVEAL: "اضغط مطولاً على الكارت لرؤية دورك بسرية",
   NIGHT: "المدينة نائمة... اتخذ قرارك بصمت",
-  DAY: "استيقظت المدينة... ناقشوا من بينكم من المافيا",
+  MORNING: "أشرقت الشمس... وهذا ما حدث في الليل",
+  DAY: "ناقشوا من بينكم من المافيا",
   VOTING: "صوّت بسرية لإخراج المشتبه به",
   VERDICT: "هذا ما قررته المدينة",
   REVENGE: "المواطن الصالح يختار من يسحبه معه",
@@ -34,6 +36,7 @@ const PHASE_ICON: Record<Phase, ComponentType<SVGProps<SVGSVGElement>>> = {
   LOBBY: CrosshairIcon,
   ROLE_REVEAL: SilhouetteIcon,
   NIGHT: MoonIcon,
+  MORNING: SunIcon,
   DAY: SunIcon,
   VOTING: BallotIcon,
   VERDICT: BallotIcon,
@@ -67,7 +70,7 @@ export function recentAnnouncements(view: PlayerView): Announcement[] {
 function curtainLine(view: PlayerView): string {
   const last = view.announcements.at(-1);
   if (view.phase === "GAME_OVER") return winnerText(view);
-  if ((view.phase === "DAY" || view.phase === "VERDICT") && last) return announcementText(last, view);
+  if (view.phase === "VERDICT" && last) return announcementText(last, view);
   return PHASE_TAGLINE[view.phase];
 }
 
@@ -80,10 +83,11 @@ const CURTAIN_MS = 3200;
 
 /**
  * Full-screen card on every phase change, so nobody misses it: big icon, the
- * phase name and what just happened. Every phone also vibrates at the same
- * moment. Tap to dismiss early. Not shown for the screen you open on.
+ * phase name and what just happened. Tap to dismiss early. Not shown for the
+ * screen you open on, nor for the morning, whose own screen is the big reveal.
+ * Vibration is handled separately (client/haptics.ts).
  */
-export function PhaseCurtain({ view, vibrate = true }: { view: PlayerView; vibrate?: boolean }) {
+export function PhaseCurtain({ view }: { view: PlayerView }) {
   const key = `${view.phase}-${view.round}`;
   const seen = useRef<string | null>(null);
   const [shown, setShown] = useState<string | null>(null);
@@ -94,9 +98,8 @@ export function PhaseCurtain({ view, vibrate = true }: { view: PlayerView; vibra
   useEffect(() => {
     const prev = seen.current;
     seen.current = key;
-    if (prev === null || prev === key || view.phase === "LOBBY") return;
+    if (prev === null || prev === key || view.phase === "LOBBY" || view.phase === "MORNING") return;
     setShown(key);
-    if (vibrate) navigator.vibrate?.([120, 60, 120]);
   }, [key]); // only a phase/round change raises the curtain
 
   useEffect(() => {

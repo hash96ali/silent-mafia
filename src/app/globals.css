@@ -20,6 +20,7 @@
   --glow: 255 30 40;
   --sky: 140 10 18;
 }
+[data-phase="MORNING"],
 [data-phase="DAY"] {
   --color-blood: #d98a00;
   --color-blood-soft: #ffb43a;

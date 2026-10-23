@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useHaptics, useHapticsNeedsTap } from "@/client/haptics";
 import { call } from "@/client/socket";
 import { SKIP, type Announcement, type PlayerView, type PublicPlayer } from "@/shared/types";
-import { BallotIcon, CrosshairIcon } from "./icons";
+import { BallotIcon, CrosshairIcon, SunIcon } from "./icons";
 import { LeaveButton } from "./Lobby";
 import { PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, recentAnnouncements, winnerText } from "./phases";
 import { TopBar } from "./PhaseTimer";
@@ -18,9 +19,13 @@ type Run = (event: Parameters<typeof call>[0], ...args: unknown[]) => Promise<bo
 export function GameScreen({ view, now }: { view: PlayerView; now: () => number }) {
   const [error, setError] = useState<string | null>(null);
   const me = view.players.find((p) => p.id === view.meId)!;
-  const canAdvance = (view.isHost || me.isGM) && ["ROLE_REVEAL", "NIGHT", "DAY", "VOTING", "VERDICT", "REVENGE"].includes(view.phase);
+  const canAdvance = (view.isHost || me.isGM) && ["ROLE_REVEAL", "NIGHT", "MORNING", "DAY", "VOTING", "VERDICT", "REVENGE"].includes(view.phase);
   const recent = recentAnnouncements(view);
   const night = view.phase === "NIGHT";
+  const myRevenge = view.stage === "REVENGE" && view.revengeBy === me.id;
+
+  useHaptics(view);
+  const needsTap = useHapticsNeedsTap(view.settings.haptics !== "OFF");
 
   const run: Run = async (event, ...args) => {
     setError(null);
@@ -29,19 +34,12 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
     return res.ok;
   };
 
-  // Silent cues. Phase changes buzz every phone (PhaseCurtain); each later
-  // night turn buzzes every living player too, so a buzz never singles
-  // anyone out. The Mafia turn opens the night, so the curtain covers it.
-  const myRevenge = view.phase === "REVENGE" && view.revengeBy === me.id;
-  useEffect(() => {
-    if (night && me.alive && !me.isGM && view.nightTurn && view.nightTurn !== "MAFIA") navigator.vibrate?.([40, 80, 40]);
-  }, [view.nightTurn]); // only night-turn changes buzz here
-
   return (
     <div data-phase={view.phase} className="flex flex-col gap-4">
       <PhaseBackdrop phase={view.phase} />
       <PhaseCurtain view={view} />
       <TopBar subtitle="ليلة الغموض" deadline={view.deadline} now={now} night={night || view.phase === "ROLE_REVEAL"} />
+      {needsTap && <p className="glass rounded-full px-4 py-2 text-center text-xs text-neutral-300">اضغط في أي مكان على الشاشة لتفعيل الاهتزاز</p>}
 
       <header className="text-center">
         <h1 className="neon-text text-3xl font-black">{PHASE_TITLE[view.phase]}</h1>
@@ -62,9 +60,9 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
         />
       )}
 
-      {view.phase !== "ROLE_REVEAL" && recent.map((a, i) => <AnnouncementBanner key={i} a={a} view={view} />)}
+      {view.stage !== "ROLE_REVEAL" && view.stage !== "DAY_ANNOUNCEMENT" && recent.map((a, i) => <AnnouncementBanner key={i} a={a} view={view} />)}
 
-      <PhaseBody view={view} me={me} run={run} />
+      <StageBody view={view} me={me} run={run} />
 
       {view.progress.required > 0 && view.phase !== "REVENGE" && (
         <p className="text-center text-xs text-neutral-500">
@@ -103,39 +101,49 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
   );
 }
 
-function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run: Run }) {
+/** Swaps the main panel by the server's stage, so every phone changes screen the moment the server does. */
+function StageBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run: Run }) {
   const alive = view.players.filter((p) => p.alive && !p.isGM);
   const nameOf = (id: string | null | undefined) => view.players.find((p) => p.id === id)?.name ?? "—";
+  // Each stage and night turn starts covered again.
+  const secretKey = `${view.stage}-${view.round}-${view.nightTurn ?? ""}`;
+  const last = view.announcements.at(-1);
 
-  if (view.phase === "ROLE_REVEAL") {
-    if (!me.role) return <Panel>اللاعبون يطّلعون على أدوارهم…</Panel>;
-    return (
-      <Button disabled={view.hasAckedReveal} onClick={() => run("reveal:ack")}>
-        {view.hasAckedReveal ? "بانتظار الآخرين…" : "رأيت دوري"}
-      </Button>
-    );
+  // Stages everyone sees the same way, dead or alive.
+  switch (view.stage) {
+    case "ROLE_REVEAL":
+      if (!me.role) return <Panel>اللاعبون يطّلعون على أدوارهم…</Panel>;
+      return (
+        <Button disabled={view.hasAckedReveal} onClick={() => run("reveal:ack")}>
+          {view.hasAckedReveal ? "بانتظار الآخرين…" : "رأيت دوري"}
+        </Button>
+      );
+    case "GAME_OVER":
+      return (
+        <Panel className="neon text-center">
+          <p className={`text-2xl font-black ${view.winner === "MAFIA" ? "neon-text" : "text-white"}`}>
+            {view.winner === "MAFIA" ? "فازت المافيا" : "فازت المدينة"}
+          </p>
+        </Panel>
+      );
+    case "DAY_ANNOUNCEMENT":
+      return (
+        <section className="glass neon flex flex-col items-center gap-3 rounded-2xl px-4 py-10 text-center">
+          <SunIcon className="neon-text size-14" />
+          <p className="text-2xl font-black text-white">{last ? announcementText(last, view) : "أشرقت الشمس."}</p>
+          <p className="text-sm text-neutral-400">يبدأ النقاش خلال لحظات…</p>
+        </section>
+      );
+    case "VERDICT":
+      if (!last) return null;
+      return (
+        <Panel title="نتيجة التصويت" eyebrow="Verdict" subtitle={view.revengeBy ? "بعدها يختار المواطن الصالح من يسحبه معه." : "بعدها يبدأ الليل."}>
+          <VoteTally a={last} view={view} />
+        </Panel>
+      );
   }
 
-  if (view.phase === "GAME_OVER") {
-    return (
-      <Panel className="neon text-center">
-        <p className={`text-2xl font-black ${view.winner === "MAFIA" ? "neon-text" : "text-white"}`}>
-          {view.winner === "MAFIA" ? "فازت المافيا" : "فازت المدينة"}
-        </p>
-      </Panel>
-    );
-  }
-
-  // Each phase and each night turn starts covered again.
-  const secretKey = `${view.phase}-${view.round}-${view.nightTurn ?? ""}`;
-  const verdict = view.announcements.at(-1);
-  if (view.phase === "VERDICT" && verdict) {
-    return (
-      <Panel title="نتيجة التصويت" eyebrow="Verdict" subtitle={view.revengeBy ? "بعدها يختار المواطن الصالح من يسحبه معه." : "بعدها يبدأ الليل."}>
-        <VoteTally a={verdict} view={view} />
-      </Panel>
-    );
-  }
+  // The GM's dashboard lists every role, so it stays behind the cover.
   if (me.isGM) {
     return (
       <SecretPanel resetKey={secretKey}>
@@ -144,7 +152,7 @@ function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
     );
   }
 
-  if (view.phase === "REVENGE" && view.revengeBy !== me.id) {
+  if (view.stage === "REVENGE" && view.revengeBy !== me.id) {
     return <Panel>{nameOf(view.revengeBy)}، المواطن الصالح، يختار من سيسحبه معه…</Panel>;
   }
 
@@ -158,38 +166,40 @@ function PhaseBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
     );
   }
 
-  if (view.phase === "DAY") {
-    return (
-      <Panel title="النقاش" eyebrow="Discussion">
-        <p className="text-sm text-neutral-300">ناقشوا من قد يكون من المافيا. يبدأ التصويت عند انتهاء الوقت.</p>
-      </Panel>
-    );
+  switch (view.stage) {
+    case "DISCUSSION":
+      return (
+        <Panel title="النقاش" eyebrow="Discussion">
+          <p className="text-sm text-neutral-300">ناقشوا من قد يكون من المافيا. يبدأ التصويت عند انتهاء الوقت.</p>
+        </Panel>
+      );
+    case "VOTING":
+      // Open list, no cover: the day vote happens in plain sight.
+      return (
+        <Panel title="صوّت لإخراج لاعب:" eyebrow="Cast your vote" subtitle={me.voteWeight > 1 ? `صوتك يُحسب ×${arDigits(me.voteWeight)}` : "اختر لاعباً ثم أكّد."}>
+          <TargetPicker
+            key={`vote-${view.round}`}
+            candidates={alive.filter((p) => p.id !== me.id)}
+            current={view.myVote}
+            allowSkip="امتناع عن التصويت"
+            confirmLabel={(id) => (id === SKIP ? "تأكيد الامتناع" : "تأكيد التصويت")}
+            onConfirm={(id) => run("vote:cast", { targetId: id })}
+            Icon={BallotIcon}
+          />
+        </Panel>
+      );
+    case "NIGHT_MAFIA_TURN":
+    case "NIGHT_DOCTOR_TURN":
+    case "NIGHT_SPECIAL_TURN":
+      // Every living player gets the same cover, actions or not.
+      return (
+        <SecretPanel resetKey={secretKey}>
+          <NightBody view={view} me={me} run={run} nameOf={nameOf} />
+        </SecretPanel>
+      );
+    default:
+      return null;
   }
-
-  if (view.phase === "VOTING") {
-    return (
-      <SecretPanel resetKey={secretKey}>
-      <Panel title="صوّت لإخراج لاعب:" eyebrow="Cast your vote" subtitle={me.voteWeight > 1 ? `صوتك يُحسب ×${arDigits(me.voteWeight)}` : "تصويتك سري."}>
-        <TargetPicker
-          key={`vote-${view.round}`}
-          candidates={alive.filter((p) => p.id !== me.id)}
-          current={view.myVote}
-          allowSkip="امتناع عن التصويت"
-          confirmLabel={(id) => (id === SKIP ? "تأكيد الامتناع" : "تأكيد التصويت في الخفاء")}
-          onConfirm={(id) => run("vote:cast", { targetId: id })}
-          Icon={BallotIcon}
-        />
-      </Panel>
-      </SecretPanel>
-    );
-  }
-
-  // NIGHT: every living player gets the same cover, actions or not.
-  return (
-    <SecretPanel resetKey={secretKey}>
-      <NightBody view={view} me={me} run={run} nameOf={nameOf} />
-    </SecretPanel>
-  );
 }
 
 /**
@@ -204,7 +214,7 @@ function NightBody({ view, me, run, nameOf }: { view: PlayerView; me: PublicPlay
   const wait = (extra?: ReactNode) => (
     <>
       {extra}
-      <Sleeping text={turn ? `الآن ${NIGHT_TURN_LABEL[turn]}… انتظر بصمت` : "المدينة نائمة…"} />
+      <Sleeping text={turn ? `الليل حالك… الآن ${NIGHT_TURN_LABEL[turn]}` : "الليل حالك…"} />
     </>
   );
 

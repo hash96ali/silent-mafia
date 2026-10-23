@@ -29,7 +29,7 @@ export function PublicScreen({ view, now }: { view: PlayerView; now: () => numbe
   return (
     <div data-phase={view.phase} className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-8 px-6 py-6 lg:px-10">
       <PhaseBackdrop phase={view.phase} />
-      <PhaseCurtain view={view} vibrate={false} />
+      <PhaseCurtain view={view} />
       <TopBar subtitle="ليلة الغموض" deadline={view.deadline} now={now} night={night || view.phase === "ROLE_REVEAL"} />
 
       <header className="text-center">

@@ -1,4 +1,4 @@
-import type { Player, PlayerView, PublicPlayer, Room } from "../shared/types";
+import { stageOf, type Player, type PlayerView, type PublicPlayer, type Room } from "../shared/types";
 import { phaseProgress } from "./gameMachine";
 import { voteWeight } from "./resolve";
 
@@ -69,6 +69,7 @@ export function toPlayerView(room: Room, viewerId: string | null, now = Date.now
     myNightTarget,
     myVote: viewer && room.phase === "VOTING" ? (room.votes[viewer.id] ?? null) : null,
     hasAckedReveal: !!viewer && room.revealAcks.includes(viewer.id),
+    stage: stageOf(room.phase, night ? room.night.turn : null),
     nightTurn: night ? room.night.turn : null,
     ...(seesGodfather && room.godfatherId ? { godfatherId: room.godfatherId } : {}),
     ...(isMafia && night && room.night.turn === "MAFIA" ? { mafiaSelection: room.night.mafiaSelection } : {}),

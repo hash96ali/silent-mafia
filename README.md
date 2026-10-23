@@ -27,10 +27,14 @@ Host toggles each role in the lobby. Mafia, Citizen and (optionally) Doctor / De
 
 ## Night order
 
-The night runs one role at a time: **Mafia → Doctor → Detective → Sniper** (only roles the host enabled). Each turn has its own timer (the "night" timer in the lobby is per turn). Everyone's phone buzzes at every turn change, and the projector shows whose turn it is.
+The night runs one role at a time: **Mafia → Doctor → Detective → Sniper** (only roles the host enabled). One night countdown is shown to everyone; each turn gets an equal share of the time left, so a quick turn leaves more for the next. Every screen switches with the server's stage (`NIGHT_MAFIA_TURN`, `NIGHT_DOCTOR_TURN`, `NIGHT_SPECIAL_TURN`, `DAY_ANNOUNCEMENT`, `DISCUSSION`, `VOTING`, ...), and the projector shows whose turn it is.
 
 - **Godfather (كبير المافيا):** one Mafia member, chosen at random when roles are dealt, makes the kill. The other Mafia see his highlighted pick live but can't choose. If the Godfather dies (vote, Sniper, drag-down), a random living Mafia member takes over immediately. If his turn times out, his highlighted pick still counts.
 - **Dead or spent roles still get a turn.** It shows the same countdown and ends by itself after a random 6–14s, so nobody can tell that role is gone.
+
+## Vibration
+
+Room setting **الاهتزاز**: *حسب الدور* (default: Godfather `[400,120,400]`, other Mafia `[200,100,200]`, Doctor `[300]`, Detective/Sniper `[100,60,100,60,100]`, everyone alive `[120,60,120]` at the morning announcement and when voting opens), *للجميع* (every living phone buzzes the same on every turn, so a buzz reveals nothing), or *صامت*. Uses `navigator.vibrate` via `triggerHaptic()` in `src/client/haptics.ts`; it fails quietly where unsupported (iPhone) and shows a "tap to enable" hint until the browser allows vibration.
 
 ## Phase changes
 

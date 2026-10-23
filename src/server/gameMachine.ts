@@ -1,5 +1,5 @@
-import { GHOST_TURN_MIN_MS, GHOST_TURN_SPREAD_MS, LIMITS, REVENGE_SEC, VERDICT_SEC } from "../shared/constants";
-import { NIGHT_TURNS, SKIP, type NightTurn, type Phase, type Player, type Room, type Settings, type VoteTarget } from "../shared/types";
+import { GHOST_TURN_MIN_MS, GHOST_TURN_SPREAD_MS, LIMITS, MORNING_SEC, REVENGE_SEC, VERDICT_SEC } from "../shared/constants";
+import { HAPTIC_MODES, NIGHT_TURNS, SKIP, type HapticMode, type NightTurn, type Phase, type Player, type Room, type Settings, type VoteTarget } from "../shared/types";
 import { checkWin, resolveMafiaKill, resolveSniperShot, tallyVotes, voteWeight } from "./resolve";
 import { ROLE_LABEL_AR } from "../shared/roleText";
 import { validateSetup } from "../shared/rules";
@@ -193,6 +193,8 @@ function advance(room: Room, ctx: Ctx): void {
       return nextTurn(room, ctx);
     case "DAY":
       return enterPhase(room, "VOTING", ctx);
+    case "MORNING":
+      return enterPhase(room, "DAY", ctx);
     case "VOTING":
       return finishVoting(room, ctx);
     case "VERDICT":
@@ -222,18 +224,22 @@ export function turnActor(room: Room, turn: NightTurn): Player | null {
   return alivePlayers(room).find((p) => p.role === turn) ?? null;
 }
 
-/** When the current phase or night turn should end by itself (the visible deadline, or a ghost turn's earlier end). */
+/** When the current phase or night turn should end by itself. */
 export function wakeAt(room: Room): number | null {
-  if (room.phase === "NIGHT" && room.night.ghostEndsAt) return room.night.ghostEndsAt;
+  if (room.phase === "NIGHT") return room.night.ghostEndsAt ?? room.night.turnEndsAt ?? room.deadline;
   return room.deadline;
 }
 
 function startNight(room: Room, ctx: Ctx): void {
   ensureGodfather(room, ctx);
+  // One countdown for the whole night, shown to everyone; turns share it.
+  const sec = room.settings.nightSec;
+  room.deadline = sec > 0 ? ctx.now + sec * 1000 : null;
   room.night = {
     turn: null,
     queue: nightTurns(room.settings),
     ghostEndsAt: null,
+    turnEndsAt: null,
     mafiaSelection: null,
     mafiaTarget: null,
     doctorTarget: null,
@@ -248,15 +254,20 @@ function nextTurn(room: Room, ctx: Ctx): void {
   const turn = room.night.queue.shift();
   room.night.turn = turn ?? null;
   room.night.ghostEndsAt = null;
+  room.night.turnEndsAt = null;
   if (!turn) return finishNight(room, ctx);
 
-  // Every turn shows the same countdown. A role that can't act ends its turn
-  // early at a random moment, just like a player who decides quickly.
-  const sec = room.settings.nightSec;
-  room.deadline = sec > 0 ? ctx.now + sec * 1000 : null;
+  // Each turn gets an equal share of the night that's left, so time a quick
+  // player doesn't use carries over to the turns after them.
+  if (room.deadline) {
+    const turnsLeft = room.night.queue.length + 1;
+    room.night.turnEndsAt = ctx.now + Math.floor((room.deadline - ctx.now) / turnsLeft);
+  }
+  // A role that can't act ends its turn early at a random moment, just like
+  // a player who decides quickly, so nobody can tell that role is gone.
   if (!turnActor(room, turn)) {
     const end = ctx.now + GHOST_TURN_MIN_MS + Math.round(ctx.rng() * GHOST_TURN_SPREAD_MS);
-    room.night.ghostEndsAt = room.deadline ? Math.min(end, room.deadline) : end;
+    room.night.ghostEndsAt = room.night.turnEndsAt ? Math.min(end, room.night.turnEndsAt) : end;
   }
 }
 
@@ -353,7 +364,7 @@ function finishNight(room: Room, ctx: Ctx): void {
   room.announcements.push({ kind: "NIGHT", round: room.round, killedIds: [...killed] });
   log(room, ctx, killed.size ? `مات ${[...killed].map(name).join(" و")} في الليل.` : "نجا الجميع هذه الليلة.", false);
 
-  if (!endIfWon(room, ctx)) enterPhase(room, "DAY", ctx);
+  if (!endIfWon(room, ctx)) enterPhase(room, "MORNING", ctx);
 }
 
 // ---------- Day vote ----------
@@ -410,7 +421,7 @@ function endIfWon(room: Room, ctx: Ctx): boolean {
 
 function enterPhase(room: Room, phase: Phase, ctx: Ctx): void {
   room.phase = phase;
-  const sec = { DAY: room.settings.daySec, VOTING: room.settings.voteSec, VERDICT: VERDICT_SEC, REVENGE: REVENGE_SEC }[phase as string] ?? 0;
+  const sec = { MORNING: MORNING_SEC, DAY: room.settings.daySec, VOTING: room.settings.voteSec, VERDICT: VERDICT_SEC, REVENGE: REVENGE_SEC }[phase as string] ?? 0;
   room.deadline = sec > 0 ? ctx.now + sec * 1000 : null;
   if (phase === "ROLE_REVEAL") room.revealAcks = [];
   if (phase === "VOTING") room.votes = {};
@@ -463,6 +474,7 @@ export function sanitizeSettings(base: Settings, patch: Partial<Settings>): Sett
     daySec: int(patch.daySec, base.daySec, 0, LIMITS.maxPhaseSec),
     voteSec: int(patch.voteSec, base.voteSec, 0, LIMITS.maxPhaseSec),
     revealRoleOnDeath: bool(patch.revealRoleOnDeath, base.revealRoleOnDeath),
+    haptics: HAPTIC_MODES.includes(patch.haptics as HapticMode) ? (patch.haptics as HapticMode) : base.haptics,
   };
 }
 

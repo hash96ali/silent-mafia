@@ -6,9 +6,10 @@ import { reduce, sanitizeSettings, wakeAt, type Action } from "../src/server/gam
 import { checkWin, resolveMafiaKill, tallyVotes } from "../src/server/resolve";
 import { assignRoles } from "../src/server/roles";
 import { toPlayerView, toPublicView } from "../src/server/view";
+import { HAPTIC, hapticFor } from "../src/client/haptics";
 
 const ctx = { now: 1_000, rng: () => 0 };
-const TURN_MS = DEFAULT_SETTINGS.nightSec * 1000;
+const NIGHT_MS = DEFAULT_SETTINGS.nightSec * 1000;
 
 function player(id: string, extra: Partial<Player> = {}): Player {
   return { id, name: id, token: `t-${id}`, socketId: null, connected: true, disconnectedAt: null, isGM: false, role: null, alive: true, revealed: false, ...extra };
@@ -18,6 +19,7 @@ const emptyNight = (): Room["night"] => ({
   turn: null,
   queue: [],
   ghostEndsAt: null,
+  turnEndsAt: null,
   mafiaSelection: null,
   mafiaTarget: null,
   doctorTarget: null,
@@ -160,7 +162,7 @@ describe("state machine", () => {
     const next = run(r, { type: "START", by: "h" }, ...["h", "a", "b", "c"].map((by) => ({ type: "REVEAL_ACK", by }) as Action));
     expect(next.phase).toBe("NIGHT");
     expect(next.night.turn).toBe("MAFIA");
-    expect(next.deadline).toBe(ctx.now + TURN_MS);
+    expect(next.deadline).toBe(ctx.now + NIGHT_MS); // one countdown for the whole night
   });
 
   it("voting out the last Mafia ends the game for the town", () => {
@@ -201,7 +203,7 @@ describe("sequential night turns", () => {
     expect(r.night.turn).toBe("DETECTIVE");
     r = run(r, act("x", "m"));
 
-    expect(r.phase).toBe("DAY");
+    expect(r.phase).toBe("MORNING");
     expect(alive(r, "c1")).toBe(false);
     expect(r.announcements.at(-1)).toMatchObject({ kind: "NIGHT", killedIds: ["c1"] });
     expect(r.investigations.x).toEqual([{ round: 1, targetId: "m", isMafia: true }]);
@@ -217,14 +219,36 @@ describe("sequential night turns", () => {
     expect(reduce(doctorTurn, act("m", "c2"), ctx).ok).toBe(false); // Mafia's turn is over
   });
 
-  it("each turn has its own timer; a timeout moves to the next turn only", () => {
-    const r = nightRoom();
-    expect(wakeAt(r)).toBe(ctx.now + TURN_MS);
+  it("one night timer; each turn gets an equal share of what's left", () => {
+    const r = nightRoom(); // 3 turns
+    expect(r.deadline).toBe(ctx.now + NIGHT_MS);
+    expect(wakeAt(r)).toBe(ctx.now + NIGHT_MS / 3);
     expect(reduce(r, { type: "TIMEOUT", deadline: 4_000 }, ctx).ok).toBe(false);
     const next = run(r, { type: "TIMEOUT", deadline: wakeAt(r)! });
     expect(next.phase).toBe("NIGHT");
     expect(next.night.turn).toBe("DOCTOR");
     expect(next.night.mafiaTarget).toBeNull();
+    expect(next.deadline).toBe(r.deadline); // the night's countdown doesn't restart
+  });
+
+  it("time a quick turn doesn't use goes to the turns after it", () => {
+    const r = run(nightRoom(), act("m", "c1")); // Mafia acted instantly
+    expect(r.night.turn).toBe("DOCTOR");
+    expect(wakeAt(r)).toBe(ctx.now + NIGHT_MS / 2); // 2 turns share the whole night
+  });
+
+  it("the stage tells every screen which night turn to show", () => {
+    let r = nightRoom();
+    expect(toPlayerView(r, "c1").stage).toBe("NIGHT_MAFIA_TURN");
+    r = run(r, act("m", "c1"));
+    expect(toPublicView(r).stage).toBe("NIGHT_DOCTOR_TURN");
+    r = run(r, act("d", "c2"));
+    expect(toPlayerView(r, "x").stage).toBe("NIGHT_SPECIAL_TURN");
+    r = run(r, act("x", "m"));
+    expect(toPlayerView(r, "c2").stage).toBe("DAY_ANNOUNCEMENT");
+    r = run(r, { type: "TIMEOUT", deadline: wakeAt(r)! });
+    expect(r.phase).toBe("DAY");
+    expect(toPlayerView(r, "c2").stage).toBe("DISCUSSION");
   });
 
   it("a dead role's turn still runs, with the same visible countdown, then skips itself", () => {
@@ -232,9 +256,9 @@ describe("sequential night turns", () => {
     base.players.find((p) => p.id === "d")!.alive = false;
     let r = run(atNight(base), act("m", "c1"));
     expect(r.night.turn).toBe("DOCTOR");
-    expect(r.deadline).toBe(ctx.now + TURN_MS); // looks like any other turn
+    expect(r.deadline).toBe(ctx.now + NIGHT_MS); // same night countdown as always
     expect(r.night.ghostEndsAt).toBeGreaterThan(ctx.now);
-    expect(r.night.ghostEndsAt).toBeLessThan(r.deadline!);
+    expect(r.night.ghostEndsAt).toBeLessThanOrEqual(r.night.turnEndsAt!);
     expect(toPublicView(r)).not.toHaveProperty("night");
     expect(JSON.stringify(toPlayerView(r, "c1"))).not.toContain("ghost");
 
@@ -323,10 +347,10 @@ describe("view redaction", () => {
   it("dead players' roles are revealed only when the setting is on", () => {
     const r = nightRoom();
     r.players.find((p) => p.id === "d")!.alive = false;
-    expect(r.settings.revealRoleOnDeath).toBe(false); // secret by default
-    expect(toPlayerView(r, "c1").players.find((p) => p.id === "d")!.role).toBeUndefined();
-    r.settings.revealRoleOnDeath = true;
+    expect(r.settings.revealRoleOnDeath).toBe(true); // revealed on elimination by default
     expect(toPlayerView(r, "c1").players.find((p) => p.id === "d")!.role).toBe("DOCTOR");
+    r.settings.revealRoleOnDeath = false;
+    expect(toPlayerView(r, "c1").players.find((p) => p.id === "d")!.role).toBeUndefined();
   });
 });
 
@@ -361,7 +385,7 @@ describe("Sniper", () => {
     base.players.push(player("d", { role: "DOCTOR" }));
     base.settings.doctor = true;
     const r = run(atNight(base), act("m", "c1"), act("d", "c2"), act("s", "c2"));
-    expect(r.phase).toBe("DAY");
+    expect(r.phase).toBe("MORNING");
     expect([alive(r, "c2"), alive(r, "s"), alive(r, "c1")]).toEqual([false, false, false]);
     expect(r.announcements.at(-1)!.killedIds.sort()).toEqual(["c1", "c2", "s"]);
   });
@@ -370,7 +394,7 @@ describe("Sniper", () => {
     let r = run(atNight(specialRoom("SNIPER")), act("m", "c1"));
     expect(r.night.turn).toBe("SNIPER");
     r = run(r, act("s", "SKIP"));
-    expect(r.phase).toBe("DAY");
+    expect(r.phase).toBe("MORNING");
     expect(r.sniperShotUsed).toBe(false);
   });
 
@@ -379,7 +403,7 @@ describe("Sniper", () => {
     expect(r.night.turn).toBe("SNIPER");
     expect(r.night.ghostEndsAt).not.toBeNull();
     expect(reduce(r, act("s", "m"), ctx).ok).toBe(false);
-    expect(run(r, { type: "TIMEOUT", deadline: wakeAt(r)! }).phase).toBe("DAY");
+    expect(run(r, { type: "TIMEOUT", deadline: wakeAt(r)! }).phase).toBe("MORNING");
   });
 
   it("only the Sniper can skip", () => {
@@ -446,7 +470,7 @@ describe("Upright Citizen", () => {
 
   it("gets no revenge when killed at night", () => {
     const r = run(atNight(specialRoom("UPRIGHT")), act("m", "s"));
-    expect(r.phase).toBe("DAY");
+    expect(r.phase).toBe("MORNING");
     expect(r.revenge).toBeNull();
   });
 });
@@ -480,5 +504,43 @@ describe("projector safety", () => {
     expect(toPublicView(r).progress).toEqual({ done: 0, required: 0 });
     r.players.push(player("gm", { isGM: true }));
     expect(toPlayerView(r, "gm").progress).toEqual({ done: 1, required: 3 });
+  });
+});
+
+describe("haptics", () => {
+  const twoMafia = () => {
+    const r = classicRoom();
+    r.players.push(player("m2", { role: "MAFIA" }), player("c3", { role: "CITIZEN" }));
+    return atNight(r);
+  };
+  const feel = (r: Room, id: string) => hapticFor(toPlayerView(r, id));
+
+  it("ROLE mode: only the player whose turn it is buzzes, the Godfather harder", () => {
+    let r = twoMafia();
+    expect(feel(r, "m")).toEqual(HAPTIC.GODFATHER);
+    expect(feel(r, "m2")).toEqual(HAPTIC.MAFIA);
+    expect(feel(r, "d")).toBeNull();
+    expect(feel(r, "c1")).toBeNull();
+    r = run(r, act("m", "c1"));
+    expect(feel(r, "d")).toEqual(HAPTIC.DOCTOR);
+    expect(feel(r, "m")).toBeNull();
+    r = run(r, act("d", "c2"));
+    expect(feel(r, "x")).toEqual(HAPTIC.SPECIAL);
+  });
+
+  it("everyone alive gets an alert for the morning and for voting", () => {
+    const r = run(twoMafia(), act("m", "c1"), act("d", "c2"), act("x", "m"));
+    expect(r.phase).toBe("MORNING");
+    expect(feel(r, "c2")).toEqual(HAPTIC.ALERT);
+    expect(feel(r, "c1")).toBeNull(); // died tonight
+    expect(feel({ ...r, phase: "VOTING" }, "m2")).toEqual(HAPTIC.ALERT);
+  });
+
+  it("ALL mode buzzes every living player on every turn; OFF never buzzes", () => {
+    const base = twoMafia();
+    const all = { ...base, settings: { ...base.settings, haptics: "ALL" as const } };
+    for (const id of ["m", "m2", "d", "x", "c1"]) expect(feel(all, id)).toEqual(HAPTIC.EVERYONE);
+    const off = { ...base, settings: { ...base.settings, haptics: "OFF" as const } };
+    for (const id of ["m", "m2", "d", "x", "c1"]) expect(feel(off, id)).toBeNull();
   });
 });

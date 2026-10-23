@@ -56,7 +56,7 @@ export function createRoom(hostName: string, asGM: boolean, settings: Partial<Se
     players: [host],
     hostId: host.id,
     deadline: null,
-    night: { turn: null, queue: [], ghostEndsAt: null, mafiaSelection: null, mafiaTarget: null, doctorTarget: null, detectiveTarget: null, sniperTarget: null },
+    night: { turn: null, queue: [], ghostEndsAt: null, turnEndsAt: null, mafiaSelection: null, mafiaTarget: null, doctorTarget: null, detectiveTarget: null, sniperTarget: null },
     votes: {},
     revealAcks: [],
     investigations: {},

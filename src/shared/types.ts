@@ -3,10 +3,11 @@
 // receive a `PlayerView`, built per player by src/server/view.ts.
 
 /**
+ * MORNING: the night's result on its own screen before discussion (DAY).
  * VERDICT: a pause after the vote so everyone sees the result and tally.
  * REVENGE: an executed Upright Citizen picks one player to drag down with them.
  */
-export const PHASES = ["LOBBY", "ROLE_REVEAL", "NIGHT", "DAY", "VOTING", "VERDICT", "REVENGE", "GAME_OVER"] as const;
+export const PHASES = ["LOBBY", "ROLE_REVEAL", "NIGHT", "MORNING", "DAY", "VOTING", "VERDICT", "REVENGE", "GAME_OVER"] as const;
 export type Phase = (typeof PHASES)[number];
 
 export type Role = "MAFIA" | "DOCTOR" | "DETECTIVE" | "CITIZEN" | "SHEIK" | "SNIPER" | "UPRIGHT";
@@ -15,6 +16,29 @@ export type Team = "MAFIA" | "TOWN";
 /** Night turns run one at a time, in this order; disabled roles are left out. */
 export const NIGHT_TURNS = ["MAFIA", "DOCTOR", "DETECTIVE", "SNIPER"] as const;
 export type NightTurn = (typeof NIGHT_TURNS)[number];
+
+/**
+ * The screen every client shows, derived from phase + night turn. The UI
+ * switches on this, so a server phase change swaps every screen at once.
+ */
+export type Stage =
+  | Exclude<Phase, "NIGHT" | "MORNING" | "DAY">
+  | "NIGHT_MAFIA_TURN"
+  | "NIGHT_DOCTOR_TURN"
+  | "NIGHT_SPECIAL_TURN"
+  | "DAY_ANNOUNCEMENT"
+  | "DISCUSSION";
+
+export function stageOf(phase: Phase, turn: NightTurn | null): Stage {
+  if (phase === "NIGHT") return turn === "MAFIA" ? "NIGHT_MAFIA_TURN" : turn === "DOCTOR" ? "NIGHT_DOCTOR_TURN" : "NIGHT_SPECIAL_TURN";
+  if (phase === "MORNING") return "DAY_ANNOUNCEMENT";
+  if (phase === "DAY") return "DISCUSSION";
+  return phase;
+}
+
+/** ROLE: buzz only the players whose turn it is. ALL: every living player at once (reveals nothing). OFF: silent. */
+export const HAPTIC_MODES = ["ROLE", "ALL", "OFF"] as const;
+export type HapticMode = (typeof HAPTIC_MODES)[number];
 
 export const SKIP = "SKIP" as const;
 export type VoteTarget = string | typeof SKIP;
@@ -27,12 +51,14 @@ export interface Settings {
   sheik: boolean;
   sniper: boolean;
   upright: boolean;
-  /** Durations in seconds; 0 disables the timer. `nightSec` is per night turn. */
+  /** Durations in seconds; 0 disables the timer. `nightSec` is the whole night, shared by its turns. */
   nightSec: number;
   daySec: number;
   voteSec: number;
   /** Reveal a player's role to everyone when they die. */
   revealRoleOnDeath: boolean;
+  /** How phones vibrate when a turn or phase starts. */
+  haptics: HapticMode;
 }
 
 // ---------- Server-side state ----------
@@ -64,6 +90,8 @@ export interface NightState {
    * deadline, so it looks like any other turn. Server/GM only.
    */
   ghostEndsAt: number | null;
+  /** When the current turn's share of the night runs out (server only; the night has one visible deadline). */
+  turnEndsAt: number | null;
   /** The Godfather's highlighted pick, shown live to the other Mafia. */
   mafiaSelection: string | null;
   /** The Godfather's confirmed kill. */
@@ -168,6 +196,8 @@ export interface PlayerView {
   myNightTarget: string | null;
   myVote: VoteTarget | null;
   hasAckedReveal: boolean;
+  /** The screen to show; see `stageOf`. */
+  stage: Stage;
   /** Whose night turn it is (public, like a narrator calling roles); null outside NIGHT. */
   nightTurn: NightTurn | null;
   /** Mafia, GM and game over only. */

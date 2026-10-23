@@ -125,7 +125,7 @@ function SettingsForm({ settings, editable, onChange }: { settings: Settings; ed
     { key: "upright", role: "UPRIGHT" },
   ];
   const timers: [keyof Settings, string][] = [
-    ["nightSec", "مؤقت كل دور ليلي"],
+    ["nightSec", "مؤقت الليل (لكل الأدوار)"],
     ["daySec", "مؤقت النقاش"],
     ["voteSec", "مؤقت التصويت"],
   ];
@@ -162,6 +162,28 @@ function SettingsForm({ settings, editable, onChange }: { settings: Settings; ed
 
         <div className="neon-rule my-1 opacity-40" />
         <Toggle checked={settings.revealRoleOnDeath} onChange={(v) => onChange({ revealRoleOnDeath: v })} label="كشف دور اللاعب عند موته" />
+        <label className="flex items-center justify-between gap-3">
+          <span className="flex flex-col">
+            <span className="font-semibold">الاهتزاز</span>
+            <span className="text-xs text-neutral-500">
+              {settings.haptics === "ROLE"
+                ? "يهتز هاتف صاحب الدور فقط. قد يسمع الآخرون الاهتزاز."
+                : settings.haptics === "ALL"
+                  ? "تهتز كل الهواتف معاً في كل دور، فلا يُعرف صاحب الدور."
+                  : "بلا اهتزاز؛ تغييرات الشاشة فقط."}{" "}
+              لا يعمل على آيفون.
+            </span>
+          </span>
+          <select
+            value={settings.haptics}
+            onChange={(e) => onChange({ haptics: e.target.value as Settings["haptics"] })}
+            className="shrink-0 rounded-lg border border-white/10 bg-black/50 px-2 py-1.5"
+          >
+            <option value="ROLE">حسب الدور</option>
+            <option value="ALL">للجميع (مموّه)</option>
+            <option value="OFF">صامت</option>
+          </select>
+        </label>
         {timers.map(([key, label]) => (
           <label key={key} className="flex items-center justify-between">
             <span className="font-semibold">{label}</span>
