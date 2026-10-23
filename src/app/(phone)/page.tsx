@@ -1,4 +1,5 @@
 import { EntryForm } from "@/components/EntryForm";
+import { HomeNotices } from "@/components/HomeNotices";
 import { CrosshairIcon } from "@/components/icons";
 
 export default function Home() {
@@ -10,6 +11,7 @@ export default function Home() {
         <p className="mt-1 text-lg font-bold text-white">ليلة الغموض</p>
         <p className="mt-2 text-sm text-neutral-400">المدينة نائمة... ولا أحد يتحرك.</p>
       </header>
+      <HomeNotices />
       <EntryForm />
     </div>
   );

@@ -8,6 +8,7 @@ import { assignRoles } from "../src/server/roles";
 import { toPlayerView, toPublicView } from "../src/server/view";
 import { HAPTIC, hapticFor } from "../src/client/haptics";
 import { announcementText } from "../src/components/phases";
+import { clearSession, isSessionExpired, loadSession, saveSession, setFlash, takeFlash } from "../src/client/session";
 
 const ctx = { now: 1_000, rng: () => 0 };
 const TURN_MS = DEFAULT_SETTINGS.nightSec * 1000;
@@ -622,5 +623,28 @@ describe("morning announcement", () => {
     const r = run(nightRoom(), act("m", "c2"), act("d", "x"), act("x", "m"), { type: "NIGHT_DONE", by: "x" });
     expect(reduce(r, { type: "ADVANCE", by: "c1" }, ctx).ok).toBe(false);
     expect(run(r, { type: "ADVANCE", by: "m" }).phase).toBe("DAY");
+  });
+});
+
+describe("stored session", () => {
+  it("expires after 2 hours without activity", () => {
+    const now = 10 * 60 * 60_000;
+    expect(isSessionExpired({ lastSeen: now - 60 * 60_000 }, now)).toBe(false);
+    expect(isSessionExpired({ lastSeen: now - 2 * 60 * 60_000 - 1 }, now)).toBe(true);
+  });
+
+  it("saves, loads and clears (works without localStorage)", () => {
+    saveSession({ code: "ABCD", playerId: "p", token: "t" });
+    const s = loadSession()!;
+    expect(s).toMatchObject({ code: "ABCD", playerId: "p", token: "t" });
+    expect(isSessionExpired(s)).toBe(false);
+    clearSession();
+    expect(loadSession()).toBeNull();
+  });
+
+  it("a notice is shown once", () => {
+    setFlash("hello");
+    expect(takeFlash()).toBe("hello");
+    expect(takeFlash()).toBeNull();
   });
 });

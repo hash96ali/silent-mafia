@@ -32,6 +32,11 @@ The night runs one role at a time: **Mafia → Doctor → Detective → Sniper**
 - **Godfather (كبير المافيا):** one Mafia member, chosen at random when roles are dealt, makes the kill. The other Mafia see his highlighted pick live but can't choose. If the Godfather dies (vote, Sniper, drag-down), a random living Mafia member takes over immediately. If his turn times out, his highlighted pick still counts.
 - **Dead or spent roles still get a turn.** It shows the same countdown and ends by itself after a random 6–14s, so nobody can tell that role is gone.
 
+## Leaving and expired sessions
+
+- Every screen has a home button (top bar; also on the night and storyteller screens). After a confirmation it leaves the room on the server, forgets the saved seat and goes home. In the lobby the player is removed; mid-game the seat stays (shown offline) because roles and turns depend on it, and a host who leaves hands over immediately.
+- On opening the home page or a room, the saved seat is checked with the server. If the room is gone (e.g. after a server restart), the seat no longer exists, or the session has been idle for over 2 hours, it is cleared and the player is sent home with "جلسة اللعبة السابقة انتهت، تم إعادتك للصفحة الرئيسية." A still-live seat is offered on the home page ("العودة إلى غرفتك"). Kicked players also land on the home page with the reason.
+
 ## How to play guide
 
 The lobby has a **طريقة اللعب والأدوار** button that opens the rules guide: both teams' goals, then a card per role. Optional roles (Doctor, Detective, Sniper, Sheik, Upright Citizen) appear only when the host has them switched on in that room.

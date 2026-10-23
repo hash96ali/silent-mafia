@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { triggerHaptic } from "@/client/haptics";
+import { SESSION_ENDED_MESSAGE, setFlash } from "@/client/session";
 import { useRoom } from "@/client/useRoom";
 import { GameScreen } from "@/components/GameScreen";
 import { Lobby } from "@/components/Lobby";
@@ -21,23 +21,18 @@ export default function RoomPage() {
     return () => clearTimeout(t);
   }, [resetBy]); // only a new reset should notify
 
-  // No saved seat for this room: send them to the join form for it.
   useEffect(() => {
+    // No saved seat for this room (e.g. a shared link): go to its join form.
     if (status === "no-session") router.replace(`/join/${code}`);
-  }, [status, code, router]);
+    // The saved session is over (room gone, seat gone, idle too long), or this
+    // device was removed: go home and say why instead of hanging in a dead room.
+    if (status === "ended" || status === "closed") {
+      setFlash(status === "closed" && closedReason ? closedReason : SESSION_ENDED_MESSAGE);
+      router.replace("/");
+    }
+  }, [status, code, router, closedReason]);
 
-  if (status === "closed") {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-        <p className="text-neutral-300">{closedReason}</p>
-        <Link href="/" className="neon-text underline">
-          العودة للبداية
-        </Link>
-      </div>
-    );
-  }
-
-  if (!view) {
+  if (!view || status === "ended" || status === "closed") {
     return <div className="flex flex-1 items-center justify-center animate-pulse text-neutral-500">جارٍ الاتصال…</div>;
   }
 

@@ -129,10 +129,17 @@ export function registerSocketHandlers(io: IO): void {
     socket.on("room:resume", (p, ack) => {
       const reply = safe(ack);
       const session = typeof p?.code === "string" ? findSession(p.code, p.playerId, p.token) : null;
-      if (!session) return reply({ ok: false, error: "SESSION_INVALID" });
+      if (!session) return reply({ ok: false, error: typeof p?.code === "string" && getRoom(p.code) ? "SESSION_INVALID" : "ROOM_GONE" });
       bind(socket, session.room, session.player);
       reply({ ok: true, data: undefined });
       broadcast(session.room);
+    });
+
+    socket.on("room:check", (p, ack) => {
+      const reply = safe<{ phase: Room["phase"] }>(ack);
+      const session = typeof p?.code === "string" ? findSession(p.code, p.playerId, p.token) : null;
+      if (!session) return reply({ ok: false, error: typeof p?.code === "string" && getRoom(p.code) ? "SESSION_INVALID" : "ROOM_GONE" });
+      reply({ ok: true, data: { phase: session.room.phase } });
     });
 
     socket.on("room:leave", (ack) => {
@@ -144,7 +151,10 @@ export function registerSocketHandlers(io: IO): void {
         socket.data = {};
         dispatch(code, { type: "LEAVE", by: playerId });
       } else {
+        // Mid-game the seat stays (roles, votes and turns depend on it) and shows as offline.
         const r = unbind(socket);
+        // A host who leaves on purpose hands over now, not after the reconnect grace period.
+        if (r && r.hostId === playerId && migrateHost(r)) cancel(`host:${r.code}`);
         if (r) broadcast(r);
       }
       const after = getRoom(code);

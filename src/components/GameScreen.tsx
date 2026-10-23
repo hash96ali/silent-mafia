@@ -5,13 +5,13 @@ import { useHaptics, useHapticsNeedsTap } from "@/client/haptics";
 import { call } from "@/client/socket";
 import { SKIP, type Announcement, type PlayerView, type PublicPlayer } from "@/shared/types";
 import { BallotIcon, CrosshairIcon, MoonIcon, SunIcon } from "./icons";
-import { LeaveButton } from "./Lobby";
+import { HomeButton } from "./HomeButton";
 import { MorningCard, PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, recentAnnouncements, winnerText } from "./phases";
 import { BigTimer, NightEndsBy, TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
 import { RoleCard } from "./RoleCard";
 import { NIGHT_TURN_LABEL } from "@/shared/roleText";
-import { Button, ErrorText, Panel, arDigits } from "./ui";
+import { Button, ConfirmDialog, ErrorText, Panel, arDigits } from "./ui";
 
 type Run = (event: Parameters<typeof call>[0], ...args: unknown[]) => Promise<boolean>;
 
@@ -40,6 +40,7 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
   const endDialog = confirmEnd && (
     <ConfirmDialog
       text="هل أنت متأكد من إنهاء الجولة وإعادة الجميع إلى غرفة الانتظار؟"
+      detail="تُمسح الأدوار والأصوات، ويبقى كل اللاعبين في الغرفة."
       confirmLabel="نعم، أنهِ اللعبة"
       onCancel={() => setConfirmEnd(false)}
       onConfirm={async () => {
@@ -64,7 +65,7 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
     <div data-phase={view.phase} className="flex flex-col gap-4">
       <PhaseBackdrop phase={view.phase} />
       <PhaseCurtain view={view} />
-      <TopBar subtitle="ليلة الغموض" deadline={view.deadline} now={now} night={night || view.phase === "ROLE_REVEAL"} />
+      <TopBar subtitle="ليلة الغموض" deadline={view.deadline} now={now} night={night || view.phase === "ROLE_REVEAL"} home={<HomeButton inGame />} />
       {needsTap && <p className="glass rounded-full px-4 py-2 text-center text-xs text-neutral-300">اضغط في أي مكان على الشاشة لتفعيل الاهتزاز</p>}
 
       <header className="flex flex-col items-center gap-3 text-center">
@@ -110,7 +111,6 @@ export function GameScreen({ view, now }: { view: PlayerView; now: () => number 
 
       {hostControls}
       {view.phase === "GAME_OVER" && view.isHost && <Button onClick={() => run("game:playAgain")}>العب مرة أخرى</Button>}
-      <LeaveButton />
 
       {night && !me.isGM && <NightScene view={view} me={me} now={now} run={run} error={error} hostControls={hostControls} />}
       <DetectiveResult view={view} />
@@ -131,7 +131,10 @@ function NarratorScreen({ view, now, error, hostControls }: { view: PlayerView; 
     <div data-phase={view.phase} className={`fixed inset-0 z-30 overflow-y-auto ${night ? "night-scene" : ""}`}>
       {!night && <PhaseBackdrop phase={view.phase} />}
       <div className="mx-auto flex min-h-full w-full max-w-md flex-col px-4 pt-6 pb-6">
-        <p className="text-center text-xs tracking-widest text-neutral-500">الراوي · Storyteller</p>
+        <div className="flex items-center justify-between">
+          <p className="text-xs tracking-widest text-neutral-500">الراوي · Storyteller</p>
+          <HomeButton inGame />
+        </div>
         <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
           <h1 className="neon-text text-5xl font-black">{PHASE_TITLE[view.phase]}</h1>
           {view.nightTurn && <p className="text-2xl font-bold text-white">الآن {NIGHT_TURN_LABEL[view.nightTurn]}</p>}
@@ -173,25 +176,6 @@ function HostControls({ canAdvance, canEnd, onAdvance, onEnd }: { canAdvance: bo
           إنهاء اللعبة
         </Button>
       )}
-    </div>
-  );
-}
-
-function ConfirmDialog({ text, confirmLabel, onConfirm, onCancel }: { text: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void }) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm" role="dialog" aria-modal="true">
-      <div className="glass neon w-full max-w-sm rounded-2xl p-5 text-center">
-        <p className="text-lg font-bold text-white">{text}</p>
-        <p className="mt-2 text-sm text-neutral-400">تُمسح الأدوار والأصوات، ويبقى كل اللاعبين في الغرفة.</p>
-        <div className="mt-5 flex flex-col gap-2">
-          <Button onClick={onConfirm} className="bg-none! bg-red-600!">
-            {confirmLabel}
-          </Button>
-          <Button variant="ghost" onClick={onCancel}>
-            إلغاء
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -309,7 +293,10 @@ function NightScene({
 
   return (
     <div data-phase="NIGHT" className="night-scene fixed inset-0 z-30 overflow-y-auto">
-      <div className="mx-auto flex min-h-full w-full max-w-md flex-col gap-5 px-4 pt-6 pb-6">
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col gap-5 px-4 pt-4 pb-6">
+        <div className="flex justify-end">
+          <HomeButton inGame />
+        </div>
         <div className="flex flex-col items-center gap-3 text-center">
           <MoonIcon className="size-10 text-neutral-200 drop-shadow-[0_0_14px_rgb(255_255_255/0.4)]" />
           {turn && <p className="text-xl font-bold text-white">الآن {NIGHT_TURN_LABEL[turn]}</p>}

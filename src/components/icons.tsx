@@ -29,6 +29,15 @@ export function CrosshairIcon(props: IconProps) {
   );
 }
 
+export function HomeIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden {...props}>
+      <path d="M3.5 11 12 4l8.5 7" />
+      <path d="M5.5 9.5V20h4.5v-5.5h4V20h4.5V9.5" />
+    </svg>
+  );
+}
+
 export function BookIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden {...props}>

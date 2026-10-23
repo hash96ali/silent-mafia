@@ -74,3 +74,35 @@ export function ErrorText({ children }: { children: ReactNode }) {
 export function arDigits(n: number | string): string {
   return String(n).replace(/\d/g, (d) => "٠١٢٣٤٥٦٧٨٩"[Number(d)]);
 }
+
+/** Centered confirm / cancel dialog for actions that are hard to undo. */
+export function ConfirmDialog({
+  text,
+  detail,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  text: string;
+  detail?: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={onCancel}>
+      <div className="glass neon w-full max-w-sm rounded-2xl p-5 text-center" onClick={(e) => e.stopPropagation()}>
+        <p className="text-lg font-bold text-white">{text}</p>
+        {detail && <p className="mt-2 text-sm text-neutral-400">{detail}</p>}
+        <div className="mt-5 flex flex-col gap-2">
+          <Button onClick={onConfirm} className="bg-none! bg-red-600!">
+            {confirmLabel}
+          </Button>
+          <Button variant="ghost" onClick={onCancel}>
+            إلغاء
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

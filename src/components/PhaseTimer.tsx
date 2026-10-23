@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { MoonIcon, SunIcon } from "./icons";
 import { arDigits } from "./ui";
 
@@ -30,15 +30,30 @@ export function PhaseTimer({ deadline, now, night }: { deadline: number | null; 
   );
 }
 
-/** Brand on the right, timer pill on the left, neon rule underneath. */
-export function TopBar({ subtitle, deadline, now, night }: { subtitle: string; deadline: number | null; now: () => number; night: boolean }) {
+/** Brand on the right; timer pill and the home button on the left; neon rule underneath. */
+export function TopBar({
+  subtitle,
+  deadline,
+  now,
+  night,
+  home,
+}: {
+  subtitle: string;
+  deadline: number | null;
+  now: () => number;
+  night: boolean;
+  home?: ReactNode;
+}) {
   return (
     <div className="-mx-4 mb-2 px-4">
-      <div className="flex items-center justify-between py-2">
+      <div className="flex items-center justify-between gap-2 py-2">
         <p className="text-sm font-bold">
           <span className="neon-text">المافيا:</span> <span className="text-white">{subtitle}</span>
         </p>
-        <PhaseTimer deadline={deadline} now={now} night={night} />
+        <div className="flex items-center gap-2">
+          <PhaseTimer deadline={deadline} now={now} night={night} />
+          {home}
+        </div>
       </div>
       <div className="neon-rule" />
     </div>

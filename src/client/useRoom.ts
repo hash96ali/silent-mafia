@@ -3,9 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlayerView } from "@/shared/types";
 import { call, getSocket } from "./socket";
-import { clearSession, loadSession } from "./session";
+import { clearSession, isSessionExpired, loadSession, touchSession } from "./session";
 
-export type RoomStatus = "connecting" | "in-room" | "no-session" | "closed";
+/**
+ * no-session: nothing saved for this room (e.g. opened a shared link) → join form.
+ * ended: the saved session is over (room gone, seat gone, or idle > 2h) → home.
+ * closed: this device was removed (kicked, or the seat opened elsewhere) → home.
+ */
+export type RoomStatus = "connecting" | "in-room" | "no-session" | "ended" | "closed";
 
 /**
  * Connects to a room and keeps `view` in sync. Re-sends the stored session on
@@ -29,17 +34,20 @@ export function useRoom(code: string) {
       setConnected(true);
       const session = loadSession();
       if (!session || session.code !== code) return setStatus("no-session");
-      const res = await call("room:resume", session);
+      if (isSessionExpired(session)) {
+        clearSession();
+        return setStatus("ended");
+      }
+      const res = await call("room:resume", { code: session.code, playerId: session.playerId, token: session.token });
       if (cancelled) return;
-      if (!res.ok) {
-        // A network error is retried on the next connect; an invalid session is final.
-        if (res.error === "SESSION_INVALID") {
-          clearSession();
-          setStatus("no-session");
-        }
+      // A network error is retried on the next connect; a missing room or seat is final.
+      if (!res.ok && (res.error === "ROOM_GONE" || res.error === "SESSION_INVALID")) {
+        clearSession();
+        setStatus("ended");
       }
     };
     const onState = (v: PlayerView) => {
+      touchSession();
       clockOffset.current = v.serverNow - Date.now();
       setView(v);
       setStatus("in-room");

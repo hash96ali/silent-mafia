@@ -2,12 +2,12 @@
 
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useState } from "react";
-import { clearSession } from "@/client/session";
 import { call } from "@/client/socket";
 import { LIMITS } from "@/shared/constants";
 import { validateSetup } from "@/shared/rules";
 import type { PlayerView, Role, Settings } from "@/shared/types";
 import { GuideModal } from "./Guide";
+import { HomeButton } from "./HomeButton";
 import { BookIcon, ScreenIcon } from "./icons";
 import { TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
@@ -28,7 +28,7 @@ export function Lobby({ view }: { view: PlayerView }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <TopBar subtitle="ليلة الغموض" deadline={null} now={Date.now} night />
+      <TopBar subtitle="ليلة الغموض" deadline={null} now={Date.now} night home={<HomeButton inGame={false} />} />
       <header className="text-center">
         <h1 className="neon-text text-3xl font-black">غرفة الانتظار</h1>
         <p className="mt-1 text-sm text-neutral-400">اجمع اللاعبين... الليل يقترب</p>
@@ -65,7 +65,6 @@ export function Lobby({ view }: { view: PlayerView }) {
       ) : (
         <p className="animate-pulse text-center text-sm text-neutral-500">بانتظار المضيف لبدء اللعبة…</p>
       )}
-      <LeaveButton />
     </div>
   );
 }
@@ -233,20 +232,6 @@ function Stepper({ label, ...props }: { label: string; onClick: () => void; disa
   return (
     <button type="button" className="size-8 rounded-lg border border-white/10 bg-black/40 text-lg leading-none disabled:opacity-30" {...props}>
       {label}
-    </button>
-  );
-}
-
-export function LeaveButton() {
-  async function leave() {
-    if (!confirm("هل تريد مغادرة الغرفة؟")) return;
-    await call("room:leave");
-    clearSession();
-    window.location.href = "/";
-  }
-  return (
-    <button onClick={leave} className="mt-2 text-center text-xs text-neutral-600 underline">
-      مغادرة الغرفة
     </button>
   );
 }

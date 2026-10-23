@@ -231,7 +231,10 @@ export interface SessionInfo {
 export interface ClientToServerEvents {
   "room:create": (p: { name: string; asGM: boolean; settings?: Partial<Settings> }, ack: Ack<SessionInfo>) => void;
   "room:join": (p: { code: string; name: string }, ack: Ack<SessionInfo>) => void;
+  /** Error "ROOM_GONE" (room no longer exists) or "SESSION_INVALID" (no such seat). */
   "room:resume": (p: SessionInfo, ack: Ack) => void;
+  /** Is this stored session still a live seat? Doesn't take over the seat. */
+  "room:check": (p: SessionInfo, ack: Ack<{ phase: Phase }>) => void;
   "room:leave": (ack: Ack) => void;
   "room:updateSettings": (p: Partial<Settings>, ack: Ack) => void;
   "room:kick": (p: { playerId: string }, ack: Ack) => void;
