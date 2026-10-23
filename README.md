@@ -32,6 +32,10 @@ The night runs one role at a time: **Mafia → Doctor → Detective → Sniper**
 - **Godfather (كبير المافيا):** one Mafia member, chosen at random when roles are dealt, makes the kill. The other Mafia see his highlighted pick live but can't choose. If the Godfather dies (vote, Sniper, drag-down), a random living Mafia member takes over immediately. If his turn times out, his highlighted pick still counts.
 - **Dead or spent roles still get a turn.** It shows the same countdown and ends by itself after a random 6–14s, so nobody can tell that role is gone.
 
+## How to play guide
+
+The lobby has a **طريقة اللعب والأدوار** button that opens the rules guide: both teams' goals, then a card per role. Optional roles (Doctor, Detective, Sniper, Sheik, Upright Citizen) appear only when the host has them switched on in that room.
+
 ## Morning announcement
 
 When the night resolves (Godfather's target vs. the Doctor's save, then the Sniper's shot: one death on a Mafia hit, two on a miss), the dead are marked `DEAD` and a dawn screen (crimson, 15s) shows "طلع الصباح..." with a skull card per victim (their role too if roles are revealed on death), or "هادئة كانت الليلة، ولم يمت أحد!". The host can move on early with **الانتقال للنقاش (Start Discussion)**; otherwise the timer does.

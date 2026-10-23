@@ -7,7 +7,8 @@ import { call } from "@/client/socket";
 import { LIMITS } from "@/shared/constants";
 import { validateSetup } from "@/shared/rules";
 import type { PlayerView, Role, Settings } from "@/shared/types";
-import { ScreenIcon } from "./icons";
+import { GuideModal } from "./Guide";
+import { BookIcon, ScreenIcon } from "./icons";
 import { TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
 import { ROLE_LABEL, ROLE_LABEL_AR } from "@/shared/roleText";
@@ -15,6 +16,7 @@ import { Button, ErrorText, Panel, arDigits } from "./ui";
 
 export function Lobby({ view }: { view: PlayerView }) {
   const [error, setError] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
   const playing = view.players.filter((p) => !p.isGM).length;
   const setupError = validateSetup(playing, view.settings);
 
@@ -31,6 +33,11 @@ export function Lobby({ view }: { view: PlayerView }) {
         <h1 className="neon-text text-3xl font-black">غرفة الانتظار</h1>
         <p className="mt-1 text-sm text-neutral-400">اجمع اللاعبين... الليل يقترب</p>
       </header>
+
+      <Button variant="ghost" onClick={() => setGuideOpen(true)} icon={<BookIcon className="neon-text size-5" />}>
+        طريقة اللعب والأدوار
+      </Button>
+      {guideOpen && <GuideModal settings={view.settings} onClose={() => setGuideOpen(false)} />}
 
       <ShareCode code={view.code} />
 
