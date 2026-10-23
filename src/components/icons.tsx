@@ -29,6 +29,14 @@ export function CrosshairIcon(props: IconProps) {
   );
 }
 
+export function SkullIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
+      <path d="M12 2.5c-4.7 0-8.5 3.4-8.5 7.9 0 2.6 1.3 4.6 3.2 5.8v2.3c0 .8.7 1.5 1.5 1.5h.8v-2h1.5v2h3v-2H15v2h.8c.8 0 1.5-.7 1.5-1.5v-2.3c1.9-1.2 3.2-3.2 3.2-5.8 0-4.5-3.8-7.9-8.5-7.9Zm-3.3 11a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm6.6 0a2 2 0 1 1 0-4 2 2 0 0 1 0 4ZM12 13.6l1.1 2.1h-2.2l1.1-2.1Z" />
+    </svg>
+  );
+}
+
 /** Ballot box, for the day vote. */
 export function BallotIcon(props: IconProps) {
   return (

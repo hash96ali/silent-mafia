@@ -6,7 +6,7 @@ import { NIGHT_TURN_LABEL, ROLE_LABEL_AR } from "@/shared/roleText";
 import type { Phase, PlayerView } from "@/shared/types";
 import { CrosshairIcon } from "./icons";
 import { BigTimer, NightEndsBy, TopBar } from "./PhaseTimer";
-import { PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, nameIn, recentAnnouncements, winnerText } from "./phases";
+import { MorningCard, PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, nameIn, recentAnnouncements, winnerText } from "./phases";
 import { arDigits } from "./ui";
 
 // Big-screen layout for a projector or TV. It renders the public view only
@@ -38,7 +38,8 @@ export function PublicScreen({ view, now }: { view: PlayerView; now: () => numbe
           {view.phase === "GAME_OVER" ? winnerText(view) : (SCREEN_TAGLINE[view.phase] ?? PHASE_TAGLINE[view.phase])}
         </p>
         <div className="mt-6">
-          <BigTimer deadline={view.deadline} now={now} className="text-8xl lg:text-9xl" />
+          {/* Smaller during the morning so the victims' cards fit on a 720p projector. */}
+          <BigTimer deadline={view.deadline} now={now} className={view.phase === "MORNING" ? "text-5xl" : "text-8xl lg:text-9xl"} />
           <NightEndsBy at={view.nightEndsBy} now={now} className="mt-2 text-xl" />
         </div>
       </header>
@@ -51,7 +52,13 @@ export function PublicScreen({ view, now }: { view: PlayerView; now: () => numbe
         <JoinCard code={view.code} />
       ) : (
         <>
+          {view.phase === "MORNING" && (
+            <div className="mx-auto w-full max-w-4xl">
+              <MorningCard view={view} big />
+            </div>
+          )}
           {view.phase !== "ROLE_REVEAL" &&
+            view.phase !== "MORNING" &&
             recent.map((a, i) => (
               <p key={i} className="glass neon mx-auto rounded-2xl px-8 py-5 text-center text-2xl font-bold lg:text-3xl">
                 {announcementText(a, view)}

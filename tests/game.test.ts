@@ -7,6 +7,7 @@ import { checkWin, resolveMafiaKill, tallyVotes } from "../src/server/resolve";
 import { assignRoles } from "../src/server/roles";
 import { toPlayerView, toPublicView } from "../src/server/view";
 import { HAPTIC, hapticFor } from "../src/client/haptics";
+import { announcementText } from "../src/components/phases";
 
 const ctx = { now: 1_000, rng: () => 0 };
 const TURN_MS = DEFAULT_SETTINGS.nightSec * 1000;
@@ -585,5 +586,41 @@ describe("haptics", () => {
     for (const id of ["m", "m2", "d", "x", "c1"]) expect(feel(all, id)).toEqual(HAPTIC.EVERYONE);
     const off = { ...base, settings: { ...base.settings, haptics: "OFF" as const } };
     for (const id of ["m", "m2", "d", "x", "c1"]) expect(feel(off, id)).toBeNull();
+  });
+});
+
+describe("morning announcement", () => {
+  const morningText = (r: Room) => {
+    const v = toPlayerView(r, "c1");
+    return announcementText(v.announcements.at(-1)!, v);
+  };
+
+  it("one player killed", () => {
+    const r = run(nightRoom(), act("m", "c2"), act("d", "x"), act("x", "m"), { type: "NIGHT_DONE", by: "x" });
+    expect(r.phase).toBe("MORNING");
+    expect(r.deadline).toBe(ctx.now + 15_000);
+    expect(alive(r, "c2")).toBe(false);
+    expect(morningText(r)).toBe("طلع الصباح... للأسف تم اغتيال اللاعب c2 الليلة الماضية.");
+  });
+
+  it("saved by the Doctor: nobody died", () => {
+    const r = run(nightRoom(), act("m", "c2"), act("d", "c2"), act("x", "m"), { type: "NIGHT_DONE", by: "x" });
+    expect(alive(r, "c2")).toBe(true);
+    expect(morningText(r)).toBe("طلع الصباح... هادئة كانت الليلة، ولم يمت أحد!");
+  });
+
+  it("a Sniper miss lists every player who fell", () => {
+    const base = specialRoom("SNIPER");
+    base.players.push(player("m2", { role: "MAFIA" }), player("c5", { role: "CITIZEN" }));
+    const r = run(atNight(base), act("m", "c1"), act("s", "c2"));
+    expect(r.phase).toBe("MORNING");
+    expect(r.announcements.at(-1)!.killedIds.sort()).toEqual(["c1", "c2", "s"]);
+    for (const name of ["c1", "c2", "s"]) expect(morningText(r)).toContain(name);
+  });
+
+  it("the host moves the town on to discussion", () => {
+    const r = run(nightRoom(), act("m", "c2"), act("d", "x"), act("x", "m"), { type: "NIGHT_DONE", by: "x" });
+    expect(reduce(r, { type: "ADVANCE", by: "c1" }, ctx).ok).toBe(false);
+    expect(run(r, { type: "ADVANCE", by: "m" }).phase).toBe("DAY");
   });
 });

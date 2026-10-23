@@ -33,7 +33,7 @@ export const GHOST_TURN_MIN_MS = 6_000;
 export const GHOST_TURN_SPREAD_MS = 8_000;
 
 /** How long the morning announcement stays on screen before discussion. */
-export const MORNING_SEC = 8;
+export const MORNING_SEC = 15;
 
 /** How long the vote result stays on screen before the game moves on. */
 export const VERDICT_SEC = 10;

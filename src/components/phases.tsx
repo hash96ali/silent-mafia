@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { ROLE_LABEL_AR } from "@/shared/roleText";
 import { SKIP, type Announcement, type Phase, type PlayerView } from "@/shared/types";
-import { BallotIcon, CrosshairIcon, MoonIcon, SilhouetteIcon, SunIcon } from "./icons";
+import { BallotIcon, CrosshairIcon, MoonIcon, SilhouetteIcon, SkullIcon, SunIcon } from "./icons";
 import { arDigits } from "./ui";
 
 // Phase wording and visuals shared by the phone screens and the projector.
@@ -54,7 +54,11 @@ export function nameIn(view: PlayerView, id: string | null | undefined) {
 
 export function announcementText(a: Announcement, view: PlayerView): string {
   const names = (ids: string[]) => ids.map((id) => nameIn(view, id)).join(" و");
-  if (a.kind === "NIGHT") return a.killedIds.length ? `قُتل ${names(a.killedIds)} الليلة الماضية.` : "نجا الجميع هذه الليلة.";
+  if (a.kind === "NIGHT") {
+    if (a.killedIds.length === 0) return "طلع الصباح... هادئة كانت الليلة، ولم يمت أحد!";
+    if (a.killedIds.length === 1) return `طلع الصباح... للأسف تم اغتيال اللاعب ${names(a.killedIds)} الليلة الماضية.`;
+    return `طلع الصباح... للأسف تم اغتيال ${names(a.killedIds)} الليلة الماضية.`;
+  }
   if (a.kind === "REVENGE") return `سحب ${names([a.byId!])} معه ${names(a.killedIds)}.`;
   if (a.revealedId && !a.killedIds.length) return `انكشف ${names([a.revealedId])}: إنه شيخ المواطنين! ينجو ويصبح صوته بثلاثة أصوات.`;
   if (a.revealedId) return `أُعدم ${names(a.killedIds)}، وكان ${ROLE_LABEL_AR.UPRIGHT}!`;
@@ -152,5 +156,53 @@ export function VoteTally({ a, view, big = false }: { a: Announcement; view: Pla
         <span>لم يصوّت قبل انتهاء الوقت: {arDigits(a.notVoted ?? 0)}</span>
       </p>
     </div>
+  );
+}
+
+/**
+ * The morning announcement card: a skull and name for each player who died in
+ * the night (several when the Sniper's shot took two), or a calm "nobody
+ * died" card. Shows a dead player's role only when roles are public.
+ */
+export function MorningCard({ view, big = false }: { view: PlayerView; big?: boolean }) {
+  return (
+    <>
+      {/* Night fading into dawn as the morning screen arrives. */}
+      <div key={view.round} className="dawn-fade pointer-events-none fixed inset-0 z-40" aria-hidden />
+      <MorningOutcome view={view} big={big} />
+    </>
+  );
+}
+
+function MorningOutcome({ view, big }: { view: PlayerView; big: boolean }) {
+  const night = [...view.announcements].reverse().find((a) => a.kind === "NIGHT" && a.round === view.round);
+  const dead = (night?.killedIds ?? []).map((id) => view.players.find((p) => p.id === id)).filter((p) => !!p);
+
+  if (dead.length === 0) {
+    return (
+      <section className={`dawn-card glass neon flex flex-col items-center gap-4 rounded-3xl px-6 text-center ${big ? "py-14" : "py-10"}`}>
+        <SunIcon className={`neon-text ${big ? "size-24" : "size-16"}`} />
+        <p className={`font-black text-white ${big ? "text-5xl" : "text-2xl"}`}>طلع الصباح...</p>
+        <p className={`font-bold text-neutral-200 ${big ? "text-3xl" : "text-lg"}`}>هادئة كانت الليلة، ولم يمت أحد!</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className={`dawn-card glass neon flex flex-col items-center gap-4 rounded-3xl px-6 text-center py-8`}>
+      <p className={`font-black text-white ${big ? "text-5xl" : "text-2xl"}`}>طلع الصباح...</p>
+      <p className={`text-neutral-300 ${big ? "text-2xl" : "text-base"}`}>
+        {dead.length === 1 ? "للأسف تم اغتيال اللاعب" : dead.length === 2 ? "للأسف سقط لاعبان" : `للأسف سقط ${arDigits(dead.length)} لاعبين`} الليلة الماضية:
+      </p>
+      <ul className={`flex flex-wrap justify-center gap-3 ${big ? "gap-5" : ""}`}>
+        {dead.map((p) => (
+          <li key={p.id} className="flex flex-col items-center gap-2 rounded-2xl border border-red-500/40 bg-red-950/40 px-5 py-4 shadow-[0_0_30px_rgb(255_30_40/0.35)]">
+            <SkullIcon className={`text-red-300 drop-shadow-[0_0_12px_rgb(255_40_50/0.8)] ${big ? "size-20" : "size-12"}`} />
+            <span className={`font-black text-white ${big ? "text-4xl" : "text-2xl"}`}>{p.name}</span>
+            {p.role && <span className={`text-red-200/80 ${big ? "text-xl" : "text-sm"}`}>كان: {ROLE_LABEL_AR[p.role]}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

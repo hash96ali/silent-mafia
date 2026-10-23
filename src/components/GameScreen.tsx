@@ -6,7 +6,7 @@ import { call } from "@/client/socket";
 import { SKIP, type Announcement, type PlayerView, type PublicPlayer } from "@/shared/types";
 import { BallotIcon, CrosshairIcon, MoonIcon, SunIcon } from "./icons";
 import { LeaveButton } from "./Lobby";
-import { PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, recentAnnouncements, winnerText } from "./phases";
+import { MorningCard, PHASE_TAGLINE, PHASE_TITLE, PhaseBackdrop, PhaseCurtain, VoteTally, announcementText, recentAnnouncements, winnerText } from "./phases";
 import { BigTimer, NightEndsBy, TopBar } from "./PhaseTimer";
 import { PlayerList } from "./PlayerList";
 import { RoleCard } from "./RoleCard";
@@ -221,11 +221,16 @@ function StageBody({ view, me, run }: { view: PlayerView; me: PublicPlayer; run:
       );
     case "DAY_ANNOUNCEMENT":
       return (
-        <section className="glass neon flex flex-col items-center gap-3 rounded-2xl px-4 py-10 text-center">
-          <SunIcon className="neon-text size-14" />
-          <p className="text-2xl font-black text-white">{last ? announcementText(last, view) : "أشرقت الشمس."}</p>
-          <p className="text-sm text-neutral-400">يبدأ النقاش خلال لحظات…</p>
-        </section>
+        <>
+          <MorningCard view={view} />
+          {view.isHost ? (
+            <Button onClick={() => run("game:advance")} icon={<SunIcon className="size-5" />}>
+              الانتقال للنقاش (Start Discussion)
+            </Button>
+          ) : (
+            <p className="text-center text-sm text-neutral-400">يبدأ النقاش عند انتهاء الوقت أو عندما يبدأه المضيف.</p>
+          )}
+        </>
       );
     case "VERDICT":
       if (!last) return null;

@@ -20,7 +20,14 @@
   --glow: 255 30 40;
   --sky: 140 10 18;
 }
-[data-phase="MORNING"],
+/* Dawn keeps the crimson look, warmed toward sunrise. */
+[data-phase="MORNING"] {
+  --color-blood: #c81e2c;
+  --color-blood-soft: #ff5f57;
+  --color-ember: #ffa08a;
+  --glow: 255 80 70;
+  --sky: 170 45 30;
+}
 [data-phase="DAY"] {
   --color-blood: #d98a00;
   --color-blood-soft: #ffb43a;
@@ -141,6 +148,22 @@ body {
   }
 }
 
+.dawn-fade {
+  background: linear-gradient(180deg, #03030a 0%, #1a0508 60%, #3a0a0c 100%);
+  animation: dawn 1.8s ease-out forwards;
+}
+.dawn-card {
+  animation: dawn-rise 0.9s 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+@keyframes dawn {
+  0% { opacity: 1; }
+  100% { opacity: 0; visibility: hidden; }
+}
+@keyframes dawn-rise {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
 @keyframes curtain {
   0% { opacity: 0; }
   12% { opacity: 1; }
@@ -152,7 +175,7 @@ body {
   to { transform: scale(1) rotate(0); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .curtain, .curtain-icon { animation-duration: 0.01s; }
+  .curtain, .curtain-icon, .dawn-fade, .dawn-card { animation-duration: 0.01s; }
   .curtain { animation: none; }
 }
 
